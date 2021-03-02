@@ -1,0 +1,3 @@
+inveniautils@ git+ssh://git@gitlab.invenia.ca/invenia/inveniautils.git@v0.4.0
+python-dateutil
+pytz

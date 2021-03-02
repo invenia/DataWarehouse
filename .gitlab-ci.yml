@@ -1,0 +1,18 @@
+---
+include:
+  - project: invenia/gitlab-ci-helper
+    file: /templates/python.yml
+
+"Check Code Format/Typing":
+  stage: setup
+  extends: .py_3_8
+  script:
+    - sed -i "s!git+ssh://git@gitlab.invenia.ca!git+https://gitlab-ci-token:$CI_BUILD_TOKEN@gitlab.invenia.ca!g" requirements/install.txt
+    - tox -re formatting,types
+
+"Test Python 3.8":
+  stage: test
+  extends: .py_3_8
+  script:
+    - sed -i "s!git+ssh://git@gitlab.invenia.ca!git+https://gitlab-ci-token:$CI_BUILD_TOKEN@gitlab.invenia.ca!g" requirements/install.txt
+    - tox -re py38
