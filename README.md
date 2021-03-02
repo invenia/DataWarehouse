@@ -23,3 +23,5 @@ The Datafeeds warehouse python interface.
 
 
 ## Changelog
+
+See the [Changelog](changelog.md) for information about what features have been added.
