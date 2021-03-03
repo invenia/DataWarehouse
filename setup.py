@@ -11,7 +11,7 @@ setup(
     description="The Datafeeds data warehouse python interface and implementation.",
     author="Invenia Technical Computing",
     url="https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse",
-    packages=find_packages(exclude=["tests"]),
+    packages=find_packages(exclude=["tests", "tests.*"]),
     install_requires=requirements,
     include_package_data=True,
 )
