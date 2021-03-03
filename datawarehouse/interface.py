@@ -44,6 +44,12 @@ class DataWarehouseInterface:
         CONTENT = enum.auto()
         RELEASE = enum.auto()
 
+    # Status codes.
+    class STATUS(enum.Enum):
+        SUCCESS = enum.auto()
+        ALREADY_EXIST = enum.auto()
+        # FAILED = enum.auto() # not necessary because an exception will be raised.
+
     # If LAST_MODIFIED_FIELD is listed in "required_metadata_fields", it
     # will be assumed that this field is a reliable indicator for if a
     # new version of the file has been released.
@@ -210,7 +216,7 @@ class DataWarehouseInterface:
         compare: Optional[Callable[[SeekableStream, SeekableStream], bool]] = None,
         source_version: Optional[str] = None,
         parser_name: Optional[str] = None,
-    ) -> Dict[str, Union[str, Tuple[AllowedTypes, ...]]]:
+    ) -> Dict[str, Union[Tuple[AllowedTypes, ...], str, STATUS]]:
         """
         Stores either a source file or a parsed file.
 
@@ -250,11 +256,14 @@ class DataWarehouseInterface:
                 Assumes the default parser when not specified.
 
         Returns:
-            A dict of the primary key and generated source version id of the file.
+            A dict of the status code, primary key, and source version id of the file.
+            If the status code is STATUS.ALREADY_EXIST, the primary key and version id
+            will be in reference to the already stored file.
             Optionally returns the parser name if storing a parsed file.
             {
                 "primary_key": Tuple[AllowedTypes, ...],
                 "source_version": str,
+                "status_code": STATUS
                 "parser_name": str, (optional)
             }
 
@@ -296,7 +305,7 @@ class DataWarehouseInterface:
         metadata_only: bool = False,
         parsed_file: bool = False,
         parser_name: Optional[str] = None,
-    ) -> Union[SeekableStream, Dict[str, AllowedTypes]]:
+    ) -> Optional[Union[SeekableStream, Dict[str, AllowedTypes]]]:
         """
         Retrieves a target file, with the option of retrieving just the metadata.
         Defaults to the latest retrieved version if version is not specified. Also has
@@ -310,7 +319,7 @@ class DataWarehouseInterface:
             parser_name: Name of the parser, assumes default when not specified.
 
         Returns:
-            SeekableStream file object or metadata item.
+            SeekableStream file object or metadata item, or None if no such file exist.
         """
         raise NotImplementedError
 
@@ -390,7 +399,8 @@ class DataWarehouseInterface:
         update_map: Dict[str, AllowedTypes],
     ):
         """
-        Updates the metadata for a given source file entry.
+        Updates the metadata for an existing source file entry. Raises an exception for
+        any failures.
 
         Args:
             primary_key: Source file primary key.
