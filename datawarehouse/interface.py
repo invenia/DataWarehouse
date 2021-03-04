@@ -22,7 +22,7 @@ class DataWarehouseInterface:
     The Datafeeds warehouse interface for storing and retrieving source files and parsed
     files.
 
-    General information:
+    General warehouse information:
       - The warehouse is divided into multiple databases (grids) with each database
         containing multiple collections (feeds).
       - Source files:
@@ -37,34 +37,44 @@ class DataWarehouseInterface:
           - Note that all parsed files must be linked to one and only one source file,
             and there can only be one parsed file per parser per source file version at
             any point in time.
+
+    Constants:
+        INDEXES: An Enum of avaiable indexes to query files by.
+        STATUS: An Enum of status codes returned by certain warehouse operations.
+        CONTENT_START_FIELD: Field name that parsed files should use to indicate the
+            start date of contents in the file.
+        LAST_MODIFIED_FIELD: Field name that source files should use to indicate its
+            last modified date or publication date, if available.
+
+            If this field is listed in the collection's "required_metadata_fields", it
+            will be assumed that this field is a reliable indicator for if a new version
+            of the file has been released.
+        RETRIEVED_FIELD: Field name that source files should use for its retrieved date.
+        RELEASE_FIELD: Field name that source files should use for its release date.
+            The release date of a file should be equal to its last modified date. If
+            the last modified date is not available, it should be the retrieved date.
+        VERSION_FIELD: Field name used by the warehouse to assign version ids to stored
+            source files.
     """
 
-    # Supported source file indexes when making queries.
     class INDEXES(enum.Enum):
         CONTENT = enum.auto()
         RELEASE = enum.auto()
 
-    # Status codes.
     class STATUS(enum.Enum):
         SUCCESS = enum.auto()
         ALREADY_EXIST = enum.auto()
         # FAILED = enum.auto() # not necessary because an exception will be raised.
 
-    # If LAST_MODIFIED_FIELD is listed in "required_metadata_fields", it
-    # will be assumed that this field is a reliable indicator for if a
-    # new version of the file has been released.
+    # public class constants
+    CONTENT_START_FIELD = "content_start"
     LAST_MODIFIED_FIELD = "last-modified"
-
-    # These 2 fields are required when storing a source file.
     RETRIEVED_FIELD = "retrieved_date"
     RELEASE_FIELD = "release_date"
-
-    # This field is required when storing a parsed file.
-    CONTENT_START_FIELD = "content_start"
-
-    # These fields are automatically added to every source file upon storing.
     VERSION_FIELD = "source_version"
-    CONTENT_TYPE_FIELD = "content_type"
+
+    # private class constants
+    _CONTENT_TYPE_FIELD = "content_type"
 
     def update_source_registry(
         self,
@@ -89,6 +99,9 @@ class DataWarehouseInterface:
             metadata_type_map: The type map for metadata fields. Types for primary key
                 fields and required metadata fields must be defined. Updates to existing
                 collections will only append to or correct the existing type map.
+
+        Raises:
+            ArgumentError: If there are any invalid combinations of arguments.
         """
         raise NotImplementedError
 
@@ -120,13 +133,14 @@ class DataWarehouseInterface:
                 completely replace the existing timezone.
             promote_default: Whether to promote the new or existing parser as the
                 default. The first parser of a collection always starts as the default.
+
+        Raises:
+            ArgumentError: If there are any invalid combinations of arguments.
         """
         raise NotImplementedError
 
     def list_databases_and_collections(self) -> Dict[str, List[str]]:
-        """
-        Lists all registered databases and collections in the data warehouse.
-        """
+        """ Lists all registered databases and collections in the data warehouse. """
         raise NotImplementedError
 
     def list_databases(self) -> List[str]:
@@ -138,56 +152,104 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     def select_database(self, database: str):
-        """ Selects a database without specifying any collection. """
+        """Selects a database without specifying any collection.
+
+        Args:
+            database: The name of the database to select.
+
+        Raises:
+            OperationError: If the databse doesn't exist.
+        """
         raise NotImplementedError
 
     def select_collection(self, collection: str, database: Optional[str] = None):
-        """ Selects a collection (and database). """
+        """Selects a collection (and database).
+
+        Args:
+            collection: The name of the collection to select.
+            database: The name of the database that the collection belongs to. Defaults
+                to the currently selected database.
+
+        Raises:
+            OperationError: If the collection and/or databsae doesn't exist.
+        """
         raise NotImplementedError
 
     @property
-    def database(self) -> str:
+    def database(self) -> Optional[str]:
         """ The currently selected database. """
         raise NotImplementedError
 
     @property
-    def collection(self) -> str:
+    def collection(self) -> Optional[str]:
         """ The currently selected collection. """
         raise NotImplementedError
 
     @property
     def primary_key_fields(self) -> Tuple[str, ...]:
-        """ The primary key fields for files in the collection. """
+        """The primary key fields for files in the collection
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
+        """
         raise NotImplementedError
 
     @property
     def required_metadata_fields(self) -> Tuple[str, ...]:
-        """ All required metadata fields including primary keys. """
+        """All required metadata fields including primary keys.
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
+        """
         raise NotImplementedError
 
     @property
     def metadata_type_map(self) -> Dict[str, TYPES]:
-        """ The metadata type map for files in the collection. """
+        """The metadata type map for files in the collection.
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
+        """
         raise NotImplementedError
 
     @property
     def default_parser_name(self) -> str:
-        """ The collection's default parser name. """
+        """The collection's default parser name.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                there are no parsers are registered with the collection.
+        """
         raise NotImplementedError
 
     @property
     def default_parser_pkey_fields(self) -> Tuple[str, ...]:
-        """ The collection's default parser's primary keys. """
+        """The collection's default parser's primary keys.
+
+        Raises:
+             OperationError: If no database and/or collection is selected or if
+                there are no parsers are registered with the collection.
+        """
         raise NotImplementedError
 
     @property
     def default_parser_type_map(self) -> Dict[str, TYPES]:
-        """ The collection's default parser's type map. """
+        """The collection's default parser's type map.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                there are no parsers are registered with the collection.
+        """
         raise NotImplementedError
 
     @property
     def default_parser_timezone(self) -> AllowedTZs:
-        """ The collection's default parser's timezone. """
+        """The collection's default parser's timezone.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                there are no parsers are registered with the collection.
+        """
         raise NotImplementedError
 
     @property
@@ -195,17 +257,29 @@ class DataWarehouseInterface:
         """
         Type maps, time zones, and other information for all available parsers
         that are associated with the collection.
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
         """
         raise NotImplementedError
 
     def get_primary_key(
         self, metadata: Dict[str, AllowedTypes]
     ) -> Tuple[AllowedTypes, ...]:
-        """ Extracts primary key values from a file's metadata entry. """
+        """Extracts primary key values from a file's metadata entry.
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
+            MetadataError: If any primary key fields are missing from metadata.
+        """
         raise NotImplementedError
 
     def get_source_version(self, metadata: Dict[str, AllowedTypes]) -> str:
-        """ Extracts the source file version from a file's metadata entry. """
+        """Extracts the source file version from a file's metadata entry.
+
+        Raises:
+            MetadataError: If the VERSION_FIELD is missing from metadata.
+        """
         raise NotImplementedError
 
     def store(
@@ -267,6 +341,11 @@ class DataWarehouseInterface:
                 "parser_name": str, (optional)
             }
 
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                trying to store a parsed file with an unregistered parser.
+            ArgumentError: If there are any invalid combinations of arguments.
+            MetadataError: If there are any problems with the file metadata.
         """
         raise NotImplementedError
 
@@ -295,6 +374,11 @@ class DataWarehouseInterface:
 
         Yields:
             The lazilly-loaded SeekableStream file object(s) or metadata item(s).
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                trying to retrieve parsed files for an invalid parser.
+            ArgumentError: If there are any invalid combinations of arguments.
         """
         raise NotImplementedError
 
@@ -320,6 +404,11 @@ class DataWarehouseInterface:
 
         Returns:
             SeekableStream file object or metadata item, or None if no such file exist.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                trying to retrieve parsed files for an invalid parser.
+            ArgumentError: If there are any invalid combinations of arguments.
         """
         raise NotImplementedError
 
@@ -329,7 +418,7 @@ class DataWarehouseInterface:
         source_version: Optional[str] = None,
         parsed_files_only: bool = False,
         parser_name: str = "all",
-    ) -> Optional[Callable[[], None]]:
+    ) -> Optional[Iterable[Callable[[], None]]]:
         """
         Deletes a target file from the warehouse.
 
@@ -344,7 +433,7 @@ class DataWarehouseInterface:
 
         Special behaviour:
         - If a source_version is not specified and multiple versions are found,
-          instead of deleting all versions right away, returns an iterator of
+          instead of deleting all versions right away, returns an iterable of
           callables to delete each version.
           eg.
             > callables = wh.delete(primary_key) # 5 versions found
@@ -365,6 +454,13 @@ class DataWarehouseInterface:
             source_version: Source file version, deletes all versions if None.
             parsed_files_only: Only deletes parsed files.
             parser_name: Name of the parser, defaults to all parsers.
+
+        Retruns:
+            None or an iterable or callables to deleted individual file versions found.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                trying to delete non-existent files.
         """
         raise NotImplementedError
 
@@ -389,6 +485,9 @@ class DataWarehouseInterface:
 
         Yields:
             The lazilly-loaded file metadata item(s).
+
+        Raises:
+            OperationError: If no database and/or collection is selected.
         """
         raise NotImplementedError
 
@@ -406,6 +505,11 @@ class DataWarehouseInterface:
             primary_key: Source file primary key.
             source_version: Source file version.
             update_map: Metadata key-val pairs to add/update.
+
+        Raises:
+            OperationError: If no database and/or collection is selected or if
+                no such file with the given primary key and version id exists.
+            MetadataError: If there are any issues with the metadata update map.
         """
         raise NotImplementedError
 
