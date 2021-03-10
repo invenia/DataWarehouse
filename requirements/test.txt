@@ -1,1 +1,9 @@
+black
+coverage
+flake8
+freezegun
+isort
+mypy
+moto[dynamodb2, s3]
 pytest
+PyYAML

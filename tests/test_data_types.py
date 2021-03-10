@@ -244,3 +244,35 @@ class TestDataTypes:
         for i in invalid_types:
             with pytest.raises(ValueError):
                 types.encode(i)
+
+
+class TestEncoded:
+    def test_serializer(self):
+        deserialized = [
+            types.Encoded("-7200", types.TYPES.TZOFFSET_TZ),
+            types.Encoded("-7200", types.TYPES.INT),
+            types.Encoded("Zulu", types.TYPES.TZFILE_PYTZ),
+            types.Encoded("Zulu", types.TYPES.STR),
+            types.Encoded("1", types.TYPES.BOOL),
+            types.Encoded("1", types.TYPES.INT),
+            types.Encoded("0.0", types.TYPES.FLOAT),
+            types.Encoded(
+                '["2020-01-01T12:00:00-05:00", ["[\\"UTC-5\\", \\"-18000\\"]", "TZOFFSET_DATEUTIL"]]',  # noqa E501
+                types.TYPES.DATETIME,
+            ),
+        ]
+
+        serialized = [
+            '["-7200", "TZOFFSET_TZ"]',
+            '["-7200", "INT"]',
+            '["Zulu", "TZFILE_PYTZ"]',
+            '["Zulu", "STR"]',
+            '["1", "BOOL"]',
+            '["1", "INT"]',
+            '["0.0", "FLOAT"]',
+            '["[\\"2020-01-01T12:00:00-05:00\\", [\\"[\\\\\\"UTC-5\\\\\\", \\\\\\"-18000\\\\\\"]\\", \\"TZOFFSET_DATEUTIL\\"]]", "DATETIME"]',  # noqa E501
+        ]
+
+        for i in range(len(deserialized)):
+            assert deserialized[i].serialize() == serialized[i]
+            assert types.Encoded.deserialize(serialized[i]) == deserialized[i]

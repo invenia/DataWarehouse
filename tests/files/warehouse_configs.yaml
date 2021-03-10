@@ -1,0 +1,10 @@
+S3Warehouse:
+  region_name: test-file-region
+  registry_table_name: test-file-registry
+  source_table_name: test-file-index
+  source_bucket_name: test-file-source
+  parsed_bucket_name: test-file-parsed
+  role_arn: test-file-arn
+  sesh_duration: 54321
+  cache_ttl: 600
+

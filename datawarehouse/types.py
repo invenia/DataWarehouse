@@ -2,7 +2,7 @@ import enum
 import json
 import logging
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import NamedTuple, Tuple, Union
+from typing import NamedTuple, Tuple, Type, Union
 
 import dateutil.tz
 import pytz
@@ -30,24 +30,32 @@ class TYPES(enum.Enum):
 
 
 AllowedTypes = Union[
+    Type[str],
+    Type[int],
+    Type[bool],
+    Type[float],
+    Type[datetime],
+    Type[timedelta],
+    Type[pytz.BaseTzInfo],
+    Type[dateutil.tz.tz.tzoffset],
+    Type[timezone],
+]
+
+TzTypes = Union[
+    pytz.BaseTzInfo,
+    dateutil.tz.tz.tzoffset,
+    timezone,
+]
+
+ValueTypes = Union[
     str,
     int,
     bool,
     float,
     datetime,
     timedelta,
-    pytz.BaseTzInfo,
-    dateutil.tz.tz.tzoffset,
-    timezone,
+    TzTypes,
 ]
-
-
-AllowedTZs = Union[
-    pytz.BaseTzInfo,
-    dateutil.tz.tz.tzoffset,
-    timezone,
-]
-
 
 # constants
 NAIVE_TAG = "Naive"
@@ -57,8 +65,16 @@ class Encoded(NamedTuple):
     val_str: str
     val_type: TYPES
 
+    @staticmethod
+    def deserialize(string: str) -> "Encoded":
+        val_str, val_type = json.loads(string)
+        return Encoded(val_str, TYPES[val_type])
 
-def get_type(value: AllowedTypes) -> TYPES:
+    def serialize(self) -> str:
+        return json.dumps([self.val_str, self.val_type.name])
+
+
+def get_type(value: ValueTypes) -> TYPES:
     """
     Gets the associated TYPES enum for the given value.
 
@@ -80,7 +96,7 @@ def get_type(value: AllowedTypes) -> TYPES:
     return val_type
 
 
-def encode(value: AllowedTypes) -> Encoded:
+def encode(value: ValueTypes) -> Encoded:
     """
     Encodes a value of the supported TYPES.
 
@@ -121,7 +137,7 @@ def encode(value: AllowedTypes) -> Encoded:
     return Encoded(val_str, val_type)
 
 
-def decode(encoded: Encoded) -> AllowedTypes:
+def decode(encoded: Encoded) -> ValueTypes:
     """
     Decodes an encoded value of one of the supported TYPES.
 
@@ -136,7 +152,7 @@ def decode(encoded: Encoded) -> AllowedTypes:
         raise ValueError("Type '%s' is invalid.", _type)
 
     if _type == TYPES.STR:
-        decoded = _str  # type: AllowedTypes
+        decoded = _str  # type: ValueTypes
     elif _type == TYPES.INT:
         decoded = int(_str)
     elif _type == TYPES.FLOAT:

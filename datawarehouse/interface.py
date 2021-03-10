@@ -14,7 +14,7 @@ from typing import (
 from inveniautils.datetime_range import DatetimeRange
 from inveniautils.stream import SeekableStream
 
-from datawarehouse.types import TYPES, AllowedTypes, AllowedTZs
+from datawarehouse.types import AllowedTypes, TzTypes, ValueTypes
 
 
 class DataWarehouseInterface:
@@ -82,7 +82,7 @@ class DataWarehouseInterface:
         collection: str,
         primary_key_fields: Optional[Union[str, Tuple[str, ...]]] = None,
         required_metadata_fields: Optional[Union[str, Iterable[str]]] = None,
-        metadata_type_map: Optional[Dict[str, TYPES]] = None,
+        metadata_type_map: Optional[Dict[str, AllowedTypes]] = None,
     ):
         """
         Registers or updates a source collection in the data warehouse.
@@ -111,8 +111,8 @@ class DataWarehouseInterface:
         collection: str,
         parser_name: str,
         primary_key_fields: Optional[Union[str, Tuple[str, ...]]] = None,
-        row_type_map: Optional[Dict[str, TYPES]] = None,
-        timezone: Optional[AllowedTZs] = None,
+        row_type_map: Optional[Dict[str, AllowedTypes]] = None,
+        timezone: Optional[TzTypes] = None,
         promote_default: bool = False,
     ):
         """
@@ -151,17 +151,6 @@ class DataWarehouseInterface:
         """ Lists all registered collections in the current database. """
         raise NotImplementedError
 
-    def select_database(self, database: str):
-        """Selects a database without specifying any collection.
-
-        Args:
-            database: The name of the database to select.
-
-        Raises:
-            OperationError: If the databse doesn't exist.
-        """
-        raise NotImplementedError
-
     def select_collection(self, collection: str, database: Optional[str] = None):
         """Selects a collection (and database).
 
@@ -176,12 +165,12 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     @property
-    def database(self) -> Optional[str]:
+    def database(self) -> str:
         """ The currently selected database. """
         raise NotImplementedError
 
     @property
-    def collection(self) -> Optional[str]:
+    def collection(self) -> str:
         """ The currently selected collection. """
         raise NotImplementedError
 
@@ -204,7 +193,7 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     @property
-    def metadata_type_map(self) -> Dict[str, TYPES]:
+    def metadata_type_map(self) -> Dict[str, AllowedTypes]:
         """The metadata type map for files in the collection.
 
         Raises:
@@ -233,7 +222,7 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     @property
-    def default_parser_type_map(self) -> Dict[str, TYPES]:
+    def default_parser_type_map(self) -> Dict[str, AllowedTypes]:
         """The collection's default parser's type map.
 
         Raises:
@@ -243,7 +232,7 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     @property
-    def default_parser_timezone(self) -> AllowedTZs:
+    def default_parser_timezone(self) -> TzTypes:
         """The collection's default parser's timezone.
 
         Raises:
@@ -264,8 +253,8 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     def get_primary_key(
-        self, metadata: Dict[str, AllowedTypes]
-    ) -> Tuple[AllowedTypes, ...]:
+        self, metadata: Dict[str, ValueTypes]
+    ) -> Tuple[ValueTypes, ...]:
         """Extracts primary key values from a file's metadata entry.
 
         Raises:
@@ -274,7 +263,7 @@ class DataWarehouseInterface:
         """
         raise NotImplementedError
 
-    def get_source_version(self, metadata: Dict[str, AllowedTypes]) -> str:
+    def get_source_version(self, metadata: Dict[str, ValueTypes]) -> str:
         """Extracts the source file version from a file's metadata entry.
 
         Raises:
@@ -288,9 +277,8 @@ class DataWarehouseInterface:
         parsed_file: bool = False,
         force_store: bool = False,
         compare: Optional[Callable[[SeekableStream, SeekableStream], bool]] = None,
-        source_version: Optional[str] = None,
         parser_name: Optional[str] = None,
-    ) -> Dict[str, Union[Tuple[AllowedTypes, ...], str, STATUS]]:
+    ) -> Dict[str, Union[Tuple[ValueTypes, ...], str, STATUS]]:
         """
         Stores either a source file or a parsed file.
 
@@ -311,7 +299,8 @@ class DataWarehouseInterface:
             registry table, it will be encoded as a string.
 
         If storing a parsed file:
-          - The source_version must be specified.
+          - The VERSION_FIELD must be available in the file's metadata and it must
+            correspond to an existing sources file version.
           - If no parser_name is specified, the default parser is assumed.
           - Always overwrites the previous parsed file if one already exist for the
             given parser and source version.
@@ -324,8 +313,6 @@ class DataWarehouseInterface:
                 duplication checks. Only relevant to source files.
             compare: The compare function to compare SeekableStream objects
                 before storing.
-            source_version: The source file version. This is only relevant when storing
-                parsed files.
             parser_name: The name of the parser, only relevant when storing parsed file.
                 Assumes the default parser when not specified.
 
@@ -335,7 +322,7 @@ class DataWarehouseInterface:
             will be in reference to the already stored file.
             Optionally returns the parser name if storing a parsed file.
             {
-                "primary_key": Tuple[AllowedTypes, ...],
+                "primary_key": Tuple[ValueTypes, ...],
                 "source_version": str,
                 "status_code": STATUS
                 "parser_name": str, (optional)
@@ -351,14 +338,14 @@ class DataWarehouseInterface:
 
     def retrieve_versions(
         self,
-        primary_key: Union[AllowedTypes, Tuple[AllowedTypes, ...]],
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
         metadata_only: bool = False,
         parsed_file: bool = False,
         parser_name: Optional[str] = None,
         latest_first: bool = True,
     ) -> Union[
         Generator[SeekableStream, None, None],
-        Generator[Dict[str, AllowedTypes], None, None],
+        Generator[Dict[str, ValueTypes], None, None],
     ]:
         """
         Retrieves all versions of a target file, with the option of retrieving just the
@@ -384,12 +371,12 @@ class DataWarehouseInterface:
 
     def retrieve(
         self,
-        primary_key: Union[AllowedTypes, Tuple[AllowedTypes, ...]],
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
         source_version: Optional[str] = None,
         metadata_only: bool = False,
         parsed_file: bool = False,
         parser_name: Optional[str] = None,
-    ) -> Optional[Union[SeekableStream, Dict[str, AllowedTypes]]]:
+    ) -> Optional[Union[SeekableStream, Dict[str, ValueTypes]]]:
         """
         Retrieves a target file, with the option of retrieving just the metadata.
         Defaults to the latest retrieved version if version is not specified. Also has
@@ -414,7 +401,7 @@ class DataWarehouseInterface:
 
     def delete(
         self,
-        primary_key: Union[AllowedTypes, Tuple[AllowedTypes, ...]],
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
         source_version: Optional[str] = None,
         parsed_files_only: bool = False,
         parser_name: str = "all",
@@ -493,9 +480,9 @@ class DataWarehouseInterface:
 
     def update_metadata_item(
         self,
-        primary_key: Union[AllowedTypes, Tuple[AllowedTypes, ...]],
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
         source_version: str,
-        update_map: Dict[str, AllowedTypes],
+        update_map: Dict[str, ValueTypes],
     ):
         """
         Updates the metadata for an existing source file entry. Raises an exception for

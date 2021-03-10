@@ -1,0 +1,89 @@
+source:
+  caiso:
+    realtime_price:
+      primary_key_fields: [key1, key2]
+      required_metadata_fields: [key3]
+      metadata_type_map: {key1: DATETIME, key2: INT, key3: FLOAT}
+    dayahead_price:
+      primary_key_fields: [key4, key5]
+      required_metadata_fields: [key6]
+      metadata_type_map: {key4: DATETIME, key5: INT, key6: STR}
+    load:
+      primary_key_fields: [key7]
+      required_metadata_fields: [key8]
+      metadata_type_map: {key7: INT, key8: FLOAT}
+  ercot:
+    realtime_price:
+      primary_key_fields: [key9, key10, key11]
+      required_metadata_fields: []
+      metadata_type_map: {key9: DATETIME, key10: STR, key11: STR}
+    load:
+      primary_key_fields: [key12]
+      required_metadata_fields: []
+      metadata_type_map: {key12: DATETIME}
+    load_forecast:
+      primary_key_fields: [key13]
+      required_metadata_fields: [key14, key15]
+      metadata_type_map: {key13: STR, key14: INT, key15: FLOAT}
+  miso:
+    dayahead_price:
+      primary_key_fields: [key16, key17]
+      required_metadata_fields: [key18]
+      metadata_type_map: {key16: DATETIME, key17: STR, key18: STR}
+  iso_ne:
+    dayahead_price:
+      primary_key_fields: [key19, key20]
+      required_metadata_fields: [key21, key22, key23]
+      metadata_type_map: {key19: INT, key20: DATETIME, key21: FLOAT, key22: STR, key23: BOOL}
+    load_forecast:
+      primary_key_fields: [key24, key25, key26, key27]
+      required_metadata_fields: []
+      metadata_type_map: {key24: DATETIME, key25: DATETIME, key26: FLOAT, key27: STR}
+parsed:
+  caiso:
+    realtime_price:
+      - parser_name: parser1
+        primary_key_fields: [key9, key10, key11]
+        row_type_map: {key9: DATETIME, key10: STR, key11: STR}
+        timezone: '["America/New_York", "TZFILE_PYTZ"]'
+    load:
+      - parser_name: parser2
+        primary_key_fields: [key13]
+        row_type_map: {key13: STR, key14: INT, key15: FLOAT}
+        timezone: '["America/Chicago", "TZFILE_PYTZ"]'
+  ercot:
+    realtime_price:
+      - parser_name: parser3
+        primary_key_fields: [key19, key20]
+        row_type_map: {key19: INT, key20: DATETIME, key21: FLOAT, key22: STR, key23: BOOL}
+        timezone: '["Zulu", "TZFILE_PYTZ"]'
+      - parser_name: parser4
+        primary_key_fields: [key12]
+        row_type_map: {key12: DATETIME}
+        timezone: '["America/Los_Angeles", "TZFILE_PYTZ"]'
+    load:
+      - parser_name: parser5
+        primary_key_fields: [key4, key5]
+        row_type_map: {key4: DATETIME, key5: INT, key6: STR}
+        timezone: '["America/Los_Angeles", "TZFILE_PYTZ"]'
+  miso:
+    dayahead_price:
+      - parser_name: parser5
+        primary_key_fields: [key3]
+        row_type_map: {key1: DATETIME, key2: INT, key3: FLOAT}
+        timezone: '["America/New_York", "TZFILE_PYTZ"]'
+  iso_ne:
+    dayahead_price:
+      - parser_name: parser5
+        primary_key_fields: [key24, key25, key26, key27]
+        row_type_map: {key24: DATETIME, key25: DATETIME, key26: FLOAT, key27: STR}
+        timezone: '["Zulu", "TZFILE_PYTZ"]'
+    load_forecast:
+      - parser_name: parser5
+        primary_key_fields: [key18]
+        row_type_map: {key16: DATETIME, key17: STR, key18: STR}
+        timezone: '["America/Los_Angeles", "TZFILE_PYTZ"]'
+      - parser_name: parser6
+        primary_key_fields: [key6]
+        row_type_map: {key4: DATETIME, key5: INT, key6: STR}
+        timezone: '["America/Chicago", "TZFILE_PYTZ"]'
