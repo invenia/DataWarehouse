@@ -1,0 +1,6 @@
+S3Warehouse:
+  region_name: test-file-region2
+  registry_table_name: test-file-registry2
+  source_table_name: test-file-index2
+  source_bucket_name: test-file-source2
+  parsed_bucket_name: test-file-parsed2
