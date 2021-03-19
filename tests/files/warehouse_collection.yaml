@@ -1,4 +1,17 @@
 source:
+  test_database:
+    test_collection:
+      primary_key_fields: [url]
+      required_metadata_fields: [filename]
+      metadata_type_map: {url: STR, filename: STR}
+    test_last_modified:
+      primary_key_fields: [url]
+      required_metadata_fields: [last-modified]
+      metadata_type_map: {url: STR, last-modified: DATETIME}
+    test_query:
+      primary_key_fields: [url]
+      required_metadata_fields: []
+      metadata_type_map: {url: STR}
   caiso:
     realtime_price:
       primary_key_fields: [key1, key2]
@@ -40,6 +53,16 @@ source:
       required_metadata_fields: []
       metadata_type_map: {key24: DATETIME, key25: DATETIME, key26: FLOAT, key27: STR}
 parsed:
+  test_database:
+    test_collection:
+      - parser_name: test_parser_1
+        primary_key_fields: [field_1, field_2, field_3]
+        row_type_map: {field_1: DATETIME, field_2: STR, field_3: FLOAT}
+        timezone: '["America/New_York", "TZFILE_PYTZ"]'
+      - parser_name: test_parser_2
+        primary_key_fields: [field_1, field_2, field_4]
+        row_type_map: {field_1: DATETIME, field_2: STR, field_4: INT}
+        timezone: '["America/Chicago", "TZFILE_PYTZ"]'
   caiso:
     realtime_price:
       - parser_name: parser1

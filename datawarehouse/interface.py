@@ -67,7 +67,10 @@ class DataWarehouseInterface:
         # FAILED = enum.auto() # not necessary because an exception will be raised.
 
     # public class constants
+    COLLECTION_ID = "feed_id"
     CONTENT_START_FIELD = "content_start"
+    CONTENT_END_FIELD = "content_end"
+    CONTENT_RES_FIELD = "content_resolution"
     LAST_MODIFIED_FIELD = "last-modified"
     RETRIEVED_FIELD = "retrieved_date"
     RELEASE_FIELD = "release_date"
@@ -151,7 +154,7 @@ class DataWarehouseInterface:
         """ Lists all registered collections in the current database. """
         raise NotImplementedError
 
-    def select_collection(self, collection: str, database: Optional[str] = None):
+    def select_collection(self, collection: str, *, database: Optional[str] = None):
         """Selects a collection (and database).
 
         Args:
@@ -276,7 +279,9 @@ class DataWarehouseInterface:
         file: SeekableStream,
         parsed_file: bool = False,
         force_store: bool = False,
-        compare: Optional[Callable[[SeekableStream, SeekableStream], bool]] = None,
+        compare_source: Optional[
+            Callable[[SeekableStream, SeekableStream], bool]
+        ] = None,
         parser_name: Optional[str] = None,
     ) -> Dict[str, Union[Tuple[ValueTypes, ...], str, STATUS]]:
         """
@@ -311,7 +316,7 @@ class DataWarehouseInterface:
                 a source file.
             force_store: Whether to force store a source file as a new version without
                 duplication checks. Only relevant to source files.
-            compare: The compare function to compare SeekableStream objects
+            compare_source: The compare function to compare SeekableStream objects
                 before storing.
             parser_name: The name of the parser, only relevant when storing parsed file.
                 Assumes the default parser when not specified.
