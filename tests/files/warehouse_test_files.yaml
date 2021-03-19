@@ -1,0 +1,106 @@
+source:
+  test_database:
+    test_collection:
+      - content: "Hello World 1"
+        metadata:
+          url: "http://url-1"
+          filename: "hello_world_1.txt"
+          retrieved_date: "2020-01-02T00:00:00+00:00"
+          release_date: "2020-01-01T00:00:00+00:00"
+      - content: "Hello World 2"
+        metadata:
+          url: "http://url-1"
+          filename: "hello_world_2.txt"
+          retrieved_date: "2020-02-02T00:00:00+00:00"
+          release_date: "2020-02-01T00:00:00+00:00"
+      - content: "Hello World 3"
+        metadata:
+          url: "http://url-1"
+          filename: "hello_world_3.txt"
+          retrieved_date: "2020-03-02T00:00:00+00:00"
+          release_date: "2020-03-01T00:00:00+00:00"
+      - content: "Hello World 4"
+        metadata:
+          url: "http://url-1"
+          filename: "hello_world_4.txt"
+          retrieved_date: "2020-04-02T00:00:00+00:00"
+          release_date: "2020-04-01T00:00:00+00:00"
+    test_last_modified:
+      - content: "Hello World 1"
+        metadata:
+          url: "http://url-1"
+          filename: "hello_world_1.txt"
+          retrieved_date: "2020-01-02T00:00:00+00:00"
+          release_date: "2020-01-01T00:00:00+00:00"
+          last-modified: "2020-01-01T00:00:00+00:00"
+    test_query:
+      - content: "Hello World 1"
+        metadata:
+          url: "http://url-1"
+          retrieved_date: "2020-01-01T00:00:00+00:00"
+          release_date: "2020-01-01T00:00:00+00:00"
+          content_start: "2020-01-01T00:00:00+00:00"
+          content_end: "2020-01-02T00:00:00+00:00"
+      - content: "Hello World 2"
+        metadata:
+          url: "http://url-2"
+          retrieved_date: "2020-01-02T00:00:00+00:00"
+          release_date: "2020-01-02T00:00:00+00:00"
+          content_start: "2020-02-01T00:00:00+00:00"
+          content_end: "2020-01-03T01:00:00+00:00"
+      - content: "Hello World 3"
+        metadata:
+          url: "http://url-3"
+          retrieved_date: "2020-01-03T00:00:00+00:00"
+          release_date: "2020-01-03T00:00:00+00:00"
+          content_start: "2020-01-03T00:00:00+00:00"
+          content_end: "2020-01-04T01:00:00+00:00"
+      - content: "Hello World 4"
+        metadata:
+          url: "http://url-4"
+          retrieved_date: "2020-01-04T00:00:00+00:00"
+          release_date: "2020-01-04T00:00:00+00:00"
+          content_start: "2020-01-04T00:00:00+00:00"
+          content_end: "2020-01-05T01:00:00+00:00"
+      - content: "Hello World 5"
+        metadata:
+          url: "http://url-5"
+          retrieved_date: "2020-01-05T00:00:00+00:00"
+          release_date: "2020-01-05T00:00:00+00:00"
+          content_start: "2020-01-05T00:00:00+00:00"
+          content_end: "2020-01-06T01:00:00+00:00"
+      - content: "Hello World 6"
+        metadata:
+          url: "http://url-6"
+          retrieved_date: "2020-01-06T00:00:00+00:00"
+          release_date: "2020-01-06T00:00:00+00:00"
+          content_start: "2020-01-06T00:00:00+00:00"
+          content_end: "2020-01-07T01:00:00+00:00"
+      - content: "Hello World 7"
+        metadata:
+          url: "http://url-7"
+          retrieved_date: "2020-01-07T00:00:00+00:00"
+          release_date: "2020-01-07T00:00:00+00:00"
+          content_start: "2020-01-07T00:00:00+00:00"
+          content_end: "2020-01-08T01:00:00+00:00"
+      - content: "Hello World 8"
+        metadata:
+          url: "http://url-8"
+          retrieved_date: "2020-01-08T00:00:00+00:00"
+          release_date: "2020-01-08T00:00:00+00:00"
+          content_start: "2020-01-08T00:00:00+00:00"
+          content_end: "2020-01-09T01:00:00+00:00"
+      - content: "Hello World 9"
+        metadata:
+          url: "http://url-9"
+          retrieved_date: "2020-01-09T00:00:00+00:00"
+          release_date: "2020-01-09T00:00:00+00:00"
+          content_start: "2020-01-09T00:00:00+00:00"
+          content_end: "2020-01-10T01:00:00+00:00"
+      - content: "Hello World 10"
+        metadata:
+          url: "http://url-10"
+          retrieved_date: "2020-01-09T00:00:00+00:00"
+          release_date: "2020-01-09T00:00:00+00:00"
+          content_start: "2020-01-10T00:00:00+00:00"
+          content_end: "2020-01-11T01:00:00+00:00"

@@ -1,8 +1,10 @@
 import copy
 import enum
+import hashlib
 import json
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta
 from typing import (
     Any,
@@ -22,11 +24,14 @@ from typing import (
 )
 
 import boto3
+import botocore
+import inveniautils.timestamp as timestamp
 import pytz
+from boto3.s3.transfer import TransferConfig
 from datafeedscommon.aws.sts import assume_iam_role
 from inveniautils.configuration import Configuration
 from inveniautils.datetime_range import DatetimeRange
-from inveniautils.stream import SeekableStream
+from inveniautils.stream import SeekableStream, copy as stream_copy
 from mypy_boto3_dynamodb.client import DynamoDBClient
 from mypy_boto3_s3.client import S3Client
 
@@ -40,7 +45,9 @@ from datawarehouse.types import (
     ValueTypes,
     decode,
     encode,
+    get_type,
 )
+from datawarehouse.utils import ReadAsBytes, get_md5
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,6 +59,7 @@ CONFIG_PREFIX = "S3Warehouse"
 
 # An encoded dynamodb item
 DynamoClientItem = Mapping[str, Mapping[Literal["S", "N"], str]]
+QueryCriteria = Mapping[str, Union[str, bool, Dict]]
 
 
 class S3Warehouse(API):
@@ -69,9 +77,18 @@ class S3Warehouse(API):
     DEFAULT_CACHE_TTL = 300
     DEFAULT_SESH_DURATION = 3600
 
+    # Default multi-part config:
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/customizations/s3.html#module-boto3.s3.inject
+    S3_CONFIG = TransferConfig()
+
+    # The DynamoDB source data Table columns
+    class SRC(enum.Enum):
+        HASH = "file_key"
+        RANGE = API.VERSION_FIELD
+
     # The DynamoDB registry Table columns
     class REG(enum.Enum):
-        ID = "feed_id"  # the hash key
+        ID = API.COLLECTION_ID  # the hash key
         DB = "database"
         COL = "collection"
         PKEYS = "primary_key_fields"
@@ -86,6 +103,37 @@ class S3Warehouse(API):
         TZ = "timezone"
         DEFAULT = "default"
 
+    # mapping for index names
+    INDEX_INFO = {
+        API.INDEXES.CONTENT: {
+            "name": "ContentStartIndex",
+            "hash": API.COLLECTION_ID,
+            "range": API.CONTENT_START_FIELD,
+            "end": API.CONTENT_END_FIELD,
+        },
+        API.INDEXES.RELEASE: {
+            "name": "ReleaseDateIndex",
+            "hash": API.COLLECTION_ID,
+            "range": API.RELEASE_FIELD,
+        },
+    }
+
+    MD5_FIELD = "md5"
+    BYTES_FIELD = "bytes"
+    S3_KEY_FIELD = "s3_key"
+
+    EXTENDED_MAPS = {
+        API.CONTENT_START_FIELD: datetime,
+        API.CONTENT_END_FIELD: datetime,
+        API.CONTENT_RES_FIELD: timedelta,
+        API.LAST_MODIFIED_FIELD: datetime,
+        API.RETRIEVED_FIELD: datetime,
+        API.RELEASE_FIELD: datetime,
+        MD5_FIELD: str,
+        BYTES_FIELD: bool,
+        S3_KEY_FIELD: str,
+    }
+
     def __init__(
         self,
         config: Optional[Configuration] = None,
@@ -94,6 +142,7 @@ class S3Warehouse(API):
         source_table_name: Optional[str] = None,
         source_bucket_name: Optional[str] = None,
         parsed_bucket_name: Optional[str] = None,
+        bucket_prefix: Optional[str] = None,
         role_arn: Optional[str] = None,
         sesh_duration: Optional[int] = None,
         cache_ttl: Optional[int] = None,
@@ -145,6 +194,9 @@ class S3Warehouse(API):
         self._source_table: str = pick_arg(source_table_name, "source_table_name")
         self._source_bucket: str = pick_arg(source_bucket_name, "source_bucket_name")
         self._parsed_bucket: str = pick_arg(parsed_bucket_name, "parsed_bucket_name")
+        self._bucket_prefix: Optional[str] = pick_arg(
+            bucket_prefix, "bucket_prefix", nullable=True
+        )
 
         # Set optional aws role and sesh duration
         self._role_arn: Optional[str] = pick_arg(role_arn, "role_arn", nullable=True)
@@ -355,7 +407,7 @@ class S3Warehouse(API):
         """ Lists all registered collections in the current database. """
         return sorted(self.list_databases_and_collections()[self.database])
 
-    def select_collection(self, collection: str, database: Optional[str] = None):
+    def select_collection(self, collection: str, *, database: Optional[str] = None):
         """Selects a database and collection.
 
         Args:
@@ -503,11 +555,23 @@ class S3Warehouse(API):
             OperationError: If no database and/or collection is selected.
             MetadataError: If any primary key fields are missing from metadata.
         """
-        keys = self.primary_key_fields
-        missing = set(keys) - metadata.keys()
-        if missing:
-            raise MetadataError(f"Primary key fields {missing} are missing.")
-        return tuple(metadata[k] for k in keys)
+        vals = []
+        type_map = self.metadata_type_map
+
+        for key in self.primary_key_fields:
+            val = metadata.get(key)
+            if key not in metadata:
+                raise MetadataError(
+                    f"Key field {key} is missing from metadata: {metadata.keys()}."
+                )
+            elif type(val) != type_map[key]:
+                raise MetadataError(
+                    f"Key {key} with value {val} has invalid type {type(val)}, expected"
+                    f" type {type(type_map[key])}"
+                )
+            vals.append(val)
+
+        return tuple(cast(Iterable, vals))
 
     def get_source_version(self, metadata: Dict[str, ValueTypes]) -> str:
         """Extracts the source file version from a file's metadata entry.
@@ -528,7 +592,9 @@ class S3Warehouse(API):
         file: SeekableStream,
         parsed_file: bool = False,
         force_store: bool = False,
-        compare: Optional[Callable[[SeekableStream, SeekableStream], bool]] = None,
+        compare_source: Optional[
+            Callable[[SeekableStream, SeekableStream], bool]
+        ] = None,
         parser_name: Optional[str] = None,
     ) -> Dict[str, Union[Tuple[ValueTypes, ...], str, API.STATUS]]:
         """
@@ -563,7 +629,7 @@ class S3Warehouse(API):
                 a source file.
             force_store: Whether to force store a source file as a new version without
                 duplication checks. Only relevant to source files.
-            compare: The compare function to compare SeekableStream objects
+            compare_source: The compare function to compare SeekableStream objects
                 before storing.
             parser_name: The name of the parser, only relevant when storing parsed file.
                 Assumes the default parser when not specified.
@@ -586,7 +652,126 @@ class S3Warehouse(API):
             ArgumentError: If there are any invalid combinations of arguments.
             MetadataError: If there are any problems with the file metadata.
         """
-        raise NotImplementedError
+        pkeys = self.get_primary_key(file.metadata)
+        # the return object
+        resp: Dict[str, Union[Tuple[ValueTypes, ...], str, API.STATUS]]
+        resp = {"primary_key": pkeys}
+        md5_hash = None
+
+        def store_source():
+            metadata = file.metadata
+            metadata[self.SRC.HASH.value] = self._generate_hash_key(metadata)
+            metadata[self.SRC.RANGE.value] = self._generate_range_key(metadata)
+            metadata[self.COLLECTION_ID] = self._get_collection_id()
+            metadata[self.BYTES_FIELD] = file.is_bytes
+            md5 = md5_hash if md5_hash else get_md5(file)
+            metadata[self.MD5_FIELD] = md5
+
+            self._validate_fields(metadata)
+            metadata[self.S3_KEY_FIELD] = self._s3_insert(file)
+            self._insert_source_table_item(metadata)
+
+            resp["source_version"] = self.get_source_version(file.metadata)
+            resp["status_code"] = API.STATUS.SUCCESS
+
+        def store_parsed():
+            file_id = file.metadata[self.SRC.HASH.value]
+            file_version = self.get_source_version(file.metadata)
+            parser = parser_name if parser_name else self.default_parser_name
+            if parser not in self.available_parsers:
+                raise ArgumentError(f"Unknown parser {parser}")
+
+            # this raise if a source file doesn't exist
+            source_metadata = self._get_source_table_item(file_id, file_version)
+            parsed_metadata = file.metadata
+            update_map = {
+                key: value
+                for key, value in parsed_metadata.items()
+                if value != source_metadata.get(key)
+            }
+
+            self._validate_fields(file.metadata, parsed_file=True)
+            self._s3_insert(file, parser)
+            self._update_source_table_item(file_id, file_version, update_map)
+
+            resp["source_version"] = file_version
+            resp["status_code"] = API.STATUS.SUCCESS
+            resp["parser_name"] = parser
+
+        if parsed_file:
+            store_parsed()
+        elif force_store:
+            store_source()
+        elif compare_source:
+            # if a compare method is supplied when storing a file
+            existing = self.retrieve(pkeys)
+            if existing and compare_source(existing, file) is True:
+                resp["source_version"] = self.get_source_version(existing.metadata)
+                resp["status_code"] = API.STATUS.ALREADY_EXIST
+            else:
+                store_source()
+        else:
+            stored_metadata = self.retrieve(pkeys, metadata_only=True)
+            if stored_metadata:
+                mod_key = self.LAST_MODIFIED_FIELD
+                md5_hash = get_md5(file)
+                # never store identical files.
+                if stored_metadata[self.MD5_FIELD] == md5_hash:
+                    store = False
+                # If "last-modified" is set but didn't change, skip storing as well.
+                elif (
+                    mod_key in self.required_metadata_fields
+                    and stored_metadata[mod_key] == file.metadata[mod_key]
+                ):
+                    store = False
+                else:
+                    store = True
+
+                if store:
+                    store_source()
+                else:
+                    resp["source_version"] = self.get_source_version(stored_metadata)
+                    resp["status_code"] = API.STATUS.ALREADY_EXIST
+            else:
+                store_source()
+
+        return resp
+
+    @overload
+    def retrieve_versions(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        metadata_only: Literal[False] = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+        latest_first: bool = True,
+    ) -> Generator[SeekableStream, None, None]:
+        ...
+
+    @overload
+    def retrieve_versions(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        metadata_only: Literal[True] = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+        latest_first: bool = True,
+    ) -> Generator[Dict[str, ValueTypes], None, None]:
+        ...
+
+    @overload
+    def retrieve_versions(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        metadata_only: bool = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+        latest_first: bool = True,
+    ) -> Union[
+        Generator[SeekableStream, None, None],
+        Generator[Dict[str, ValueTypes], None, None],
+    ]:
+        ...
 
     def retrieve_versions(
         self,
@@ -619,7 +804,59 @@ class S3Warehouse(API):
                 trying to retrieve parsed files for an invalid parser.
             ArgumentError: If there are any invalid combinations of arguments.
         """
-        raise NotImplementedError
+        if not isinstance(primary_key, (tuple, list)):
+            primary_key = (primary_key,)
+
+        hash_key = self._generate_hash_key(primary_key)
+        query_order = not latest_first
+        criteria = self._file_query_criteria(hash_key, ascending=query_order)
+
+        results = self._query_source_table(criteria)
+        for metadata in results:
+            if metadata_only:
+                yield metadata
+
+            elif parsed_file:
+                parser_name = parser_name if parser_name else self.default_parser_name
+                if parser_name not in self.available_parsers:
+                    raise ArgumentError(f"Unknown parser {parser_name}")
+                yield self._s3_retrieve(metadata, parser_name)
+
+            else:
+                yield self._s3_retrieve(metadata)
+
+    @overload
+    def retrieve(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        source_version: Optional[str] = None,
+        metadata_only: Literal[False] = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+    ) -> Optional[SeekableStream]:
+        ...
+
+    @overload
+    def retrieve(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        source_version: Optional[str] = None,
+        metadata_only: Literal[True] = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+    ) -> Optional[Dict[str, ValueTypes]]:
+        ...
+
+    @overload
+    def retrieve(
+        self,
+        primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
+        source_version: Optional[str] = None,
+        metadata_only: bool = ...,
+        parsed_file: bool = False,
+        parser_name: Optional[str] = None,
+    ) -> Optional[Union[SeekableStream, Dict[str, ValueTypes]]]:
+        ...
 
     def retrieve(
         self,
@@ -649,7 +886,37 @@ class S3Warehouse(API):
                 trying to retrieve parsed files for an invalid parser.
             ArgumentError: If there are any invalid combinations of arguments.
         """
-        raise NotImplementedError
+        if not isinstance(primary_key, (tuple, list)):
+            primary_key = (primary_key,)
+
+        if source_version is None:
+            try:
+                return next(
+                    self.retrieve_versions(
+                        primary_key,
+                        metadata_only=metadata_only,
+                        parsed_file=parsed_file,
+                        parser_name=parser_name,
+                        latest_first=True,
+                    )
+                )
+            except StopIteration:
+                return None
+        else:
+            hash_key = self._generate_hash_key(primary_key)
+            # this throws an exception if the version does not exist
+            metadata = self._get_source_table_item(hash_key, source_version)
+            if metadata_only:
+                return metadata
+
+            elif parsed_file:
+                parser = parser_name if parser_name else self.default_parser_name
+                if parser not in self.available_parsers:
+                    raise ArgumentError(f"Unknown parser {parser}")
+                return self._s3_retrieve(metadata, parser)
+
+            else:
+                return self._s3_retrieve(metadata)
 
     def delete(
         self,
@@ -711,9 +978,9 @@ class S3Warehouse(API):
         ascending: bool = True,
     ) -> Generator[Dict[str, Any], None, None]:
         """
-        Finds all metadata items that overlap with the given query_range.
-        The query_range will correspond to the index being used.
-        All metadata items are returned if no range is specified.
+        Finds all metadata items that overlap with the given query_range. The
+        query_range will correspond to the index being used. Query bounds are always
+        inclusive. All metadata items are returned if no range is specified.
 
         Args:
             query_range: The overlapping DatetimeRange to query for.
@@ -728,7 +995,9 @@ class S3Warehouse(API):
         Raises:
             OperationError: If no database and/or collection is selected.
         """
-        raise NotImplementedError
+        criteria = self._range_query_criteria(query_range, index, ascending)
+        for item in self._query_source_table(criteria, fields):
+            yield item
 
     def update_metadata_item(
         self,
@@ -750,7 +1019,11 @@ class S3Warehouse(API):
                 no such file with the given primary key and version id exists.
             MetadataError: If there are any issues with the metadata update map.
         """
-        raise NotImplementedError
+        if not isinstance(primary_key, (tuple, list)):
+            primary_key = (primary_key,)
+
+        hash_key = self._generate_hash_key(primary_key)
+        self._update_source_table_item(hash_key, source_version, update_map)
 
     def export(
         self,
@@ -808,6 +1081,9 @@ class S3Warehouse(API):
     def _get_client(
         self, name: Literal["dynamodb", "s3"]
     ) -> Union[DynamoDBClient, S3Client]:
+        """Generic helper method to get a DynamoDB or S3 client. Handles renewing the
+        session if a custom role is used.
+        """
         client = self._s3 if name == "s3" else self._dynamo
         renew = self._sesh_expiry is None or datetime.now(pytz.utc) >= self._sesh_expiry
         # if a role arn is passed in, use to role credentials.
@@ -823,6 +1099,7 @@ class S3Warehouse(API):
         return client
 
     def _renew_sesh(self):
+        """ Renews the assumed role session. Only necessary if a role is used. """
         sesh, expiry = assume_iam_role(
             role_arn=self._role_arn,
             sesh_name=self.__class__.__name__,
@@ -834,8 +1111,339 @@ class S3Warehouse(API):
         self._s3 = None
         self._dynamo = None
 
-    def _get_collection_id(self, db: str, coll: str) -> str:
+    def _get_collection_id(
+        self, db: Optional[str] = None, coll: Optional[str] = None
+    ) -> str:
+        """ Generates the collection id """
+        if not (db and coll):
+            db = self.database
+            coll = self.collection
         return "_".join([db, coll])
+
+    def _generate_range_key(self, metadata: Dict[str, ValueTypes]) -> str:
+        """ Generates the Dynamodb table range key (source_version) for the file. """
+        if self.RETRIEVED_FIELD not in metadata:
+            raise MetadataError(f"{self.RETRIEVED_FIELD} is missing from the metadata.")
+
+        ts = str(timestamp.from_datetime(metadata[self.RETRIEVED_FIELD]))
+        uid = str(uuid.uuid4().hex[:8])  # the first 32 bits should be good enough
+        return "_".join([ts, uid])
+
+    def _generate_hash_key(
+        self, primary_key: Union[Dict[str, ValueTypes], Tuple[ValueTypes, ...]]
+    ) -> str:
+        """Generates the Dynamodb table hash key (file_key) for the file."""
+        if isinstance(primary_key, dict):
+            primary_key = self.get_primary_key(primary_key)
+
+        self._validate_primary_keys(primary_key)
+        serialized = self._serialize_primary_key(primary_key)
+        hashed = hashlib.sha256(serialized.encode()).hexdigest()
+        return "/".join([self.database, self.collection, hashed])
+
+    def _generate_s3_key(
+        self, hash_key: str, range_key: str, parser_name: Optional[str] = None
+    ) -> str:
+        """Generates a parsed file or source file S3 key.
+        If parser_name is supplied, generates a parsed file s3 key, otherwise, generates
+        a source file key.
+        """
+        db, coll, file_key = hash_key.split("/", 2)
+        # prepend the source version to file_key
+        file_key = "_".join([range_key, file_key])
+
+        if parser_name:
+            # parser name will be a sub-prefix after database and collection.
+            s3_key = "/".join([db, coll, parser_name, file_key])
+        else:
+            s3_key = "/".join([db, coll, file_key])
+
+        if self._bucket_prefix:
+            s3_key = "/".join([self._bucket_prefix, s3_key])
+
+        return s3_key
+
+    def _serialize_primary_key(self, primary_key: Tuple[ValueTypes, ...]) -> str:
+        dt = lambda dt: str(timestamp.from_datetime(dt))  # encoder for datetimes
+        other = lambda other: encode(other).val_str  # encoder for all other types
+
+        serialized = [
+            dt(v) if get_type(v) == TYPES.DATETIME else other(v) for v in primary_key
+        ]
+
+        return "_".join(serialized)
+
+    def _validate_primary_keys(self, primary_key: Tuple[ValueTypes, ...]):
+        if len(primary_key) != len(self.primary_key_fields) or any(
+            not isinstance(primary_key[i], self.metadata_type_map[k])
+            for i, k in enumerate(self.primary_key_fields)
+        ):
+            raise ArgumentError(f"Pkey {primary_key} is invalid for the collection.")
+
+    def _validate_fields(self, metadata: Dict[str, Any], parsed_file: bool = False):
+        """Ensures that the metadata contains all required fields."""
+        required = set(self.required_metadata_fields)
+        required.update(
+            [
+                self.RETRIEVED_FIELD,
+                self.RELEASE_FIELD,
+                self.COLLECTION_ID,
+                self.MD5_FIELD,
+                self.BYTES_FIELD,
+            ]
+        )
+
+        if parsed_file:
+            required.add(self.CONTENT_START_FIELD)
+
+        missing = required - metadata.keys()
+        if missing:
+            raise MetadataError(f"The file metadata is missing {missing} fields.")
+
+    def _insert_source_table_item(self, metadata: Dict[str, ValueTypes]):
+        """Inserts a new metadata entry into the source data table. Errors if a file
+        with the same primary key and version already exist.
+        """
+        self._validate_fields(metadata)
+        encoded = self._encode_metadata(metadata)
+        ddb_formated = cast(Dict[str, Any], self._format_dynamo(encoded))
+        self._dynamo_client.put_item(
+            TableName=self._source_table,
+            Item=ddb_formated,
+            # only inserts new item, throws exception if item already esxist.
+            ConditionExpression=(
+                f"attribute_not_exists({self.SRC.HASH.value})"
+                " AND "
+                f"attribute_not_exists({self.SRC.RANGE.value})"
+            ),
+        )
+
+    def _update_source_table_item(
+        self,
+        hash_key: str,
+        range_key: str,
+        update_map: Dict[str, ValueTypes],
+    ):
+        """ Updates a source table entry. """
+        if not update_map:
+            raise ArgumentError("Update map is empty.")
+
+        illegal = self.primary_key_fields + (API.RETRIEVED_FIELD,)
+
+        ddb_formatted = self._format_dynamo(self._encode_metadata(update_map))
+        expressions = []
+        mappings = {}
+
+        for key, val in ddb_formatted.items():
+            if key in illegal:
+                raise MetadataError(f"Updating the {key} field is not allowed.")
+            expressions.append(f"{key} = :{key}")
+            mappings[f":{key}"] = val
+
+        expressions[0] = "SET " + expressions[0]
+        statements = ", ".join(expressions)
+
+        criteria = {
+            "TableName": self._source_table,
+            "Key": {
+                self.SRC.HASH.value: {"S": hash_key},
+                self.SRC.RANGE.value: {"S": range_key},
+            },
+            "UpdateExpression": statements,
+            "ExpressionAttributeValues": mappings,
+            "ConditionExpression": (
+                f"attribute_exists({self.SRC.HASH.value})"
+                " AND "
+                f"attribute_exists({self.SRC.RANGE.value})"
+            ),
+        }
+
+        try:
+            self._dynamo_client.update_item(**criteria)  # type: ignore
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise OperationError(
+                    f"DynamoDB Item {hash_key} - {range_key} does not exist."
+                )
+            else:
+                raise
+
+    def _get_source_table_item(
+        self,
+        hash_key: str,
+        range_key: str,
+    ) -> Dict[str, ValueTypes]:
+        """Gets the dynamo entry for a target file."""
+        resp = self._dynamo_client.get_item(
+            TableName=self._source_table,
+            Key={
+                self.SRC.HASH.value: {"S": hash_key},
+                self.SRC.RANGE.value: {"S": range_key},
+            },
+        )
+        if "Item" in resp:
+            sanitized = self._sanitize_dynamo(cast(DynamoClientItem, resp["Item"]))
+            return self._decode_metadata(sanitized)
+        else:
+            raise OperationError(
+                f"File with key '{hash_key}' and version '{range_key}' does not"
+                f" exist in {self.database} - {self.collection}."
+            )
+
+    def _query_source_table(
+        self,
+        criteria: QueryCriteria,
+        fields: Optional[Iterable[str]] = None,
+    ) -> Generator[Dict[str, ValueTypes], None, None]:
+        """Performs the Dynamo query using the given criteria."""
+        additional_args = {"TableName": self._source_table}
+
+        if fields:
+            additional_args["ProjectionExpression"] = ", ".join(fields)
+
+        paginator = self._dynamo_client.get_paginator("query")
+        for result in paginator.paginate(**criteria, **additional_args):  # type: ignore
+            for item in result["Items"]:
+                sanitized = self._sanitize_dynamo(cast(DynamoClientItem, item))
+                yield self._decode_metadata(sanitized)
+
+    def _range_query_criteria(
+        self,
+        query_range: Optional[DatetimeRange] = None,
+        index: API.INDEXES = API.INDEXES.CONTENT,
+        ascending: bool = True,
+    ) -> QueryCriteria:
+        """Generates a DynamoDB query criteria to get all entries from the collection
+        that overlap with the given query range. Query range is always assumed to be
+        inclusive.
+        """
+        if query_range is None:
+            # Always use the ReleaseDateIndex if no range is specified because release
+            # date is required for all files. content_start is only required for parsed
+            # files.
+            index = API.INDEXES.RELEASE
+
+        # Details about the dynamodb index
+        index_name = self.INDEX_INFO[index]["name"]
+        hash_key = self.INDEX_INFO[index]["hash"]
+        range_key = self.INDEX_INFO[index]["range"]
+
+        # get the feed_id
+        hash_val = self._get_collection_id()
+
+        _cond = f"{hash_key} = :{hash_key}"
+        _attrs = {f":{hash_key}": {"S": hash_val}}
+        _filter = ""
+
+        # If a range is specified, additionally query for the targeted range
+        if query_range:
+            # fmt: off
+            if index == API.INDEXES.CONTENT:
+                end_key = self.INDEX_INFO[index]["end"]
+                # query for content_start <= query_range.end
+                _cond += f" AND {range_key} <= :max_range"
+                # Then filter for content_end > query_range.start.
+                # use > not => because content_end in the DB is non-inclusive.
+                _filter += f"{end_key} > :min_range OR attribute_not_exists({end_key})"
+
+            else:  # index == API.INDEXES.RELEASE:
+                _cond += f" AND {range_key} BETWEEN :min_range AND :max_range"
+            # fmt: on
+
+            min_range = str(timestamp.from_datetime(query_range.start))
+            max_range = str(timestamp.from_datetime(query_range.end))
+            _attrs.update(
+                {":min_range": {"N": min_range}, ":max_range": {"N": max_range}}
+            )
+
+        criteria = {
+            "IndexName": index_name,
+            "ScanIndexForward": ascending,
+            "KeyConditionExpression": _cond,
+            "ExpressionAttributeValues": _attrs,
+        }
+
+        if _filter:
+            criteria["FilterExpression"] = _filter
+
+        return cast(QueryCriteria, criteria)
+
+    def _file_query_criteria(
+        self,
+        hash_key: str,
+        ascending: bool = False,
+    ) -> QueryCriteria:
+        """Queries criteria for source files in the collection that matches the given
+        primary key (i.e., to query for all available versions of a source file).
+        """
+        hash_field = self.SRC.HASH.value
+
+        criteria: QueryCriteria = {
+            "ScanIndexForward": ascending,
+            "KeyConditionExpression": f"{hash_field} = :{hash_field}",
+            "ExpressionAttributeValues": {f":{hash_field}": {"S": hash_key}},
+        }
+
+        return criteria
+
+    def _s3_retrieve(
+        self,
+        metadata: Dict[str, ValueTypes],
+        parser_name: Optional[str] = None,
+    ) -> Optional[SeekableStream]:
+        hash_key = cast(str, metadata[self.SRC.HASH.value])
+        range_key = cast(str, metadata[self.SRC.RANGE.value])
+
+        bucket = self._parsed_bucket if parser_name else self._source_bucket
+        s3_key = self._generate_s3_key(hash_key, range_key, parser_name=parser_name)
+
+        try:
+            raw_stream = self._s3_client.get_object(Bucket=bucket, Key=s3_key)["Body"]
+        except self._s3_client.exceptions.NoSuchKey:
+            return None
+
+        if metadata[self.BYTES_FIELD] is True:
+            return SeekableStream(raw_stream, **metadata)
+        else:
+            stream = SeekableStream("", **metadata)
+            # SeekableStream API currently doesn't support writes.
+            stream_copy(raw_stream, stream._content)
+            stream.seek(0)
+            return stream
+
+    def _s3_insert(
+        self,
+        file: SeekableStream,
+        parser_name: Optional[str] = None,
+    ) -> str:
+        """Inserts a source file or parsed file into the s3 warehouse.
+        If parser_name is supplied, assumes that the file is a parsed_file.
+        """
+        metadata = self._encode_metadata(file.metadata)
+        hash_key = cast(str, metadata[self.SRC.HASH.value])
+        range_key = cast(str, metadata[self.SRC.RANGE.value])
+
+        bucket = self._parsed_bucket if parser_name else self._source_bucket
+        s3_key = self._generate_s3_key(hash_key, range_key, parser_name=parser_name)
+
+        main_args = {
+            "Bucket": bucket,
+            "Key": s3_key,
+        }
+        extra_args = {
+            "ACL": "bucket-owner-full-control",
+            "Metadata": metadata,
+        }
+        # the s3_client.upload_fileobj() method requires a byte stream
+        with ReadAsBytes(file) as byte_stream:
+            self._s3_client.upload_fileobj(
+                Fileobj=byte_stream,
+                Config=self.S3_CONFIG,
+                **main_args,  # type: ignore
+                ExtraArgs=extra_args,
+            )
+
+        return s3_key
 
     def _update_cache(self, row: Dict[str, Any]):
         """ Update the cache with a new entry. """
@@ -893,6 +1501,11 @@ class S3Warehouse(API):
             return decoded
         else:
             raise OperationError(f"Invalid collection '{coll}' and database '{db}'")
+
+    def _type(self, metadata_key: str) -> Optional[AllowedTypes]:
+        """ Helper method to get the type of a metadata field. """
+        key_type = self.metadata_type_map.get(metadata_key)
+        return key_type if key_type else self.EXTENDED_MAPS.get(metadata_key)
 
     def _encode_registry(self, entry: Dict[str, Any]) -> DynamoClientItem:
         """ Encodes a registry to prep it for storing in DDB. """
@@ -955,7 +1568,71 @@ class S3Warehouse(API):
             },
         }
 
-        sanitized: Dict[str, str]
-        sanitized = {k: v["S"] for k, v in entry.items()}
-
+        sanitized = self._sanitize_dynamo(entry)
         return {k: registry_dec[self.REG(k)](v) for k, v in sanitized.items()}
+
+    def _encode_metadata(self, entry: Dict[str, ValueTypes]) -> Dict[str, str]:
+        """Encodes file metadata values into strings. Keys with undefined type maps that
+        are not strings are dropped, along with a warning log.
+        """
+        encoded = {}
+        # Encodes everything except for datetimes into string using types.encode()
+        for k, v in entry.items():
+            field_type = self._type(k)
+            val_type = get_type(v).value
+            # type mismatch, raise an error.
+            if field_type is not None and field_type != val_type:
+                raise TypeError(
+                    f"Expected type for '{k}'' is '{field_type}', got '{val_type}'."
+                )
+            # Store datetimes as epoch timestamps to support ddb indexing.
+            elif field_type == datetime:
+                encoded[k] = str(timestamp.from_datetime(v))
+            # encode all other types using types.encode()
+            elif field_type is not None or val_type == str:
+                encoded[k] = encode(v).val_str
+            # drop the key if it is not defined in the type map and val is not a string
+            else:
+                LOGGER.warning(
+                    "Ignoring key '%s' with non-str type '%s', non-str types must be "
+                    "registered in the collection's typemap.",
+                    k,
+                    val_type,
+                )
+
+        return encoded
+
+    def _decode_metadata(self, entry: Dict[str, str]) -> Dict[str, ValueTypes]:
+        """Decodes file metadata value from string into their original type. Keys with
+        undefined type maps are left unchanged as strings.
+        """
+        decoded = {}
+        for key, val in entry.items():
+            field_type = self._type(key)
+            if field_type == datetime:
+                # Decode the epoch timestamp and localize it into its original timezone
+                dt = timestamp.to_datetime(int(val))
+                try:
+                    decoded[key] = dt.astimezone(self.default_parser_timezone)
+                except OperationError:
+                    decoded[key] = dt  # when no parser is registered
+            # All other non-datetime fields defined in the typemap
+            elif field_type is not None:
+                decoded[key] = decode(Encoded(val, TYPES(field_type)))
+            # non-defined types are left as strings.
+            else:
+                decoded[key] = val
+
+        return decoded
+
+    def _format_dynamo(self, entry: Dict[str, str]) -> DynamoClientItem:
+        """ Formats an encoded metadata entry into the DynamoDB Item format. """
+        number_types = (datetime, int)
+        return {
+            key: {"N" if self._type(key) in number_types else "S": val}
+            for key, val in entry.items()
+        }
+
+    def _sanitize_dynamo(self, entry: DynamoClientItem) -> Dict[str, str]:
+        """ Sanitizes a DynamoDB Item by striping off Type info. """
+        return {k: v["S"] if "S" in v else v["N"] for k, v in entry.items()}

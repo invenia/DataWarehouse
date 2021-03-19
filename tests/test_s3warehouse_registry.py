@@ -4,87 +4,30 @@ from pathlib import Path
 
 import pytest
 import pytz
-import yaml
 from freezegun import freeze_time
 from inveniautils.configuration import Configuration
-from moto import mock_dynamodb2, mock_s3
 
 from datawarehouse import exceptions, implementations
-from datawarehouse.types import TYPES, Encoded, decode
-from tests.aws_setup import create_bucket, create_registry_table, create_source_table
-
-
-REGION = "us-east-1"
-SOURCE_BUCKET = "source-bucket"
-PARSED_BUCKET = "parsed-bucket"
-REGISTRY_TABLE = "registry-table"
-SOURCE_TABLE = "source-table"
-
-
-# helper method to get a fresh warehouse instance.
-def _get_warehouse_sesh(db=None, coll=None, ttl=None):
-    return implementations.S3Warehouse(
-        region_name=REGION,
-        registry_table_name=REGISTRY_TABLE,
-        source_table_name=SOURCE_TABLE,
-        source_bucket_name=SOURCE_BUCKET,
-        parsed_bucket_name=PARSED_BUCKET,
-        cache_ttl=ttl,
-        load_defaults=False,
-        database=db,
-        collection=coll,
-    )
-
-
-# helper method to load in some test collections from a file.
-def _load_test_collections_file():
-    loaded = yaml.safe_load(Path("tests/files/warehouse_collection.yaml").read_text())
-    for db, colls in loaded["source"].items():
-        for coll, fields in colls.items():
-            fields["primary_key_fields"] = tuple(fields["primary_key_fields"])
-            fields["required_metadata_fields"] = tuple(
-                fields["required_metadata_fields"]
-            )
-            for k, v in fields["metadata_type_map"].items():
-                fields["metadata_type_map"][k] = TYPES[v].value
-    for db, colls in loaded["parsed"].items():
-        for coll, parsers in colls.items():
-            for parser in parsers:
-                parser["primary_key_fields"] = tuple(parser["primary_key_fields"])
-                parser["timezone"] = decode(Encoded.deserialize(parser["timezone"]))
-                for k, v in parser["row_type_map"].items():
-                    parser["row_type_map"][k] = TYPES[v].value
-                parser["row_type_map"][k]
-
-    return loaded
-
-
-# helper method to register some new collectons in the backend
-def _register_test_collections():
-    collections = _load_test_collections_file()
-    warehouse = _get_warehouse_sesh()
-    for db, colls in collections["source"].items():
-        for coll, fields in colls.items():
-            warehouse.update_source_registry(db, coll, **fields)
-    for db, colls in collections["parsed"].items():
-        for coll, parsers in colls.items():
-            for parser in parsers:
-                warehouse.update_parsed_registry(db, coll, **parser)
+from tests.aws_setup import (
+    PARSED_BUCKET,
+    REGION,
+    REGISTRY_TABLE,
+    SOURCE_BUCKET,
+    SOURCE_TABLE,
+    get_warehouse_sesh,
+    mock_start,
+    mock_stop,
+    setup_resources,
+)
+from tests.utils import register_test_collections
 
 
 @pytest.fixture()
 def warehouse():
-    s3 = mock_s3()
-    ddb = mock_dynamodb2()
-    s3.start()
-    ddb.start()
-    create_bucket(SOURCE_BUCKET)
-    create_bucket(PARSED_BUCKET)
-    create_registry_table(REGISTRY_TABLE, REGION)
-    create_source_table(SOURCE_TABLE, REGION)
-    yield _get_warehouse_sesh()
-    s3.stop()
-    ddb.stop()
+    mock_start()
+    setup_resources()
+    yield get_warehouse_sesh()
+    mock_stop()
 
 
 @pytest.fixture()
@@ -180,7 +123,7 @@ def test_empty_warehouse(warehouse):
 
     # Selecting invalid db and collection on instantiation fails.
     with pytest.raises(exceptions.OperationError):
-        _get_warehouse_sesh("miso", "realtime")
+        get_warehouse_sesh("miso", "realtime")
 
     # These will all fails with OperationError because no db/collection is selected.
     invalid_operations = [
@@ -203,6 +146,15 @@ def test_empty_warehouse(warehouse):
 def test_register_new_sources(warehouse):
     # warehouse is empty
     assert warehouse.list_databases_and_collections() == {}
+
+    # Primary key not defined
+    with pytest.raises(exceptions.ArgumentError):
+        warehouse.update_source_registry(
+            database="miso",
+            collection="load",
+            required_metadata_fields="key2",
+            metadata_type_map={"key1": datetime, "key2": int},
+        )
 
     # register new collection
     warehouse.update_source_registry(
@@ -301,7 +253,7 @@ def test_register_new_sources(warehouse):
     assert warehouse.metadata_type_map == {"key1": datetime}
 
     # Ensure that the registry persists across sessions, and select collection on init
-    new_warehouse = _get_warehouse_sesh("ercot", "dayahead")
+    new_warehouse = get_warehouse_sesh("ercot", "dayahead")
     assert new_warehouse.list_databases_and_collections() == {
         "miso": ["load", "realtime"],
         "ercot": ["dayahead"],
@@ -397,6 +349,27 @@ def test_register_and_update_parsers(warehouse):
     warehouse.select_collection("load", database="miso")
     assert warehouse.available_parsers == {}
 
+    # Primary key not defined
+    with pytest.raises(exceptions.ArgumentError):
+        warehouse.update_parsed_registry(
+            database="miso",
+            collection="load",
+            parser_name="parser1",
+            row_type_map={"key1": datetime, "key2": int},
+            timezone=pytz.timezone("America/Chicago"),
+        )
+
+    # type map is not complete
+    with pytest.raises(exceptions.ArgumentError):
+        warehouse.update_parsed_registry(
+            database="miso",
+            collection="load",
+            parser_name="parser1",
+            primary_key_fields=("key1", "key2", "key3"),
+            row_type_map={"key1": datetime, "key2": int},
+            timezone=pytz.timezone("America/Chicago"),
+        )
+
     parsers = {
         "first_parser": {
             "primary_key_fields": ("key1",),
@@ -489,7 +462,7 @@ def test_registry_cache(warehouse):
     first_scan = warehouse._last_scan
 
     # this registers a bunch of collections using a different session
-    _register_test_collections()
+    register_test_collections(get_warehouse_sesh())
 
     # default session cache has a 300s ttl, no new scan
     assert warehouse.list_databases_and_collections() == {}
@@ -501,14 +474,40 @@ def test_registry_cache(warehouse):
     assert len(warehouse.list_databases_and_collections()) == 1
     assert warehouse._last_scan == first_scan  # still no new scan
 
+    # check that collection attributes uses the cache
+    type_map = warehouse.metadata_type_map
+    # update the collection using a different sesh
+    new_sesh = get_warehouse_sesh()
+    added_map = {"new_key": datetime}
+    new_tz = pytz.timezone("Zulu")
+    new_sesh.update_source_registry(
+        database=warehouse.database,
+        collection=warehouse.collection,
+        metadata_type_map=added_map,
+    )
+    new_sesh.update_parsed_registry(
+        database=warehouse.database,
+        collection=warehouse.collection,
+        parser_name=warehouse.default_parser_name,
+        timezone=new_tz,
+    )
+    # the previous session is still using the cache
+    new_map = {**type_map, **added_map}
+    assert warehouse.metadata_type_map != new_map
+    assert warehouse.default_parser_timezone != new_tz
+    # reselect the collection to renew the cache
+    warehouse.select_collection("realtime_price", database="caiso")
+    assert warehouse.metadata_type_map == new_map
+    assert warehouse.default_parser_timezone == new_tz
+
     # get a fresh session and try again
-    warehouse = _get_warehouse_sesh()
+    warehouse = get_warehouse_sesh()
     assert len(warehouse.list_databases_and_collections()) > 1
 
 
 def test_no_registry_cache(warehouse):
     # get a custom warehouse sesh with a 0s ttl cache (i.e. doesn't do caching)
-    warehouse = _get_warehouse_sesh(ttl=0)
+    warehouse = get_warehouse_sesh(ttl=0)
 
     # Warehouse is empty
     assert warehouse._last_scan is None
@@ -517,7 +516,7 @@ def test_no_registry_cache(warehouse):
     first_scan = warehouse._last_scan
 
     # this registers a bunch of collections using a different session
-    _register_test_collections()
+    register_test_collections(get_warehouse_sesh())
 
     # a new scan is done
     assert warehouse.list_databases_and_collections() != {}
@@ -533,7 +532,7 @@ def test_renew_registry_cache(warehouse, freezer):
     first_scan = warehouse._last_scan
 
     # this registers a bunch of collections using a different session
-    _register_test_collections()
+    register_test_collections(get_warehouse_sesh())
 
     # default session cache has a 300s ttl, no new scan
     assert warehouse.list_databases_and_collections() == {}
