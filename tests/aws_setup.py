@@ -34,7 +34,7 @@ def setup_resources():
 
 # helper method to get a fresh warehouse instance.
 def get_warehouse_sesh(db=None, coll=None, ttl=None, prefix=None):
-    return implementations.S3Warehouse(
+    return implementations.DynamoWarehouse(
         region_name=REGION,
         registry_table_name=REGISTRY_TABLE,
         source_table_name=SOURCE_TABLE,

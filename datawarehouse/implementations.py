@@ -6,6 +6,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -27,7 +28,9 @@ import boto3
 import botocore
 import inveniautils.timestamp as timestamp
 import pytz
+import yaml
 from boto3.s3.transfer import TransferConfig
+from datafeedscommon.aws.cloudformation import get_stack_output
 from datafeedscommon.aws.sts import assume_iam_role
 from inveniautils.configuration import Configuration
 from inveniautils.datetime_range import DatetimeRange
@@ -54,7 +57,7 @@ LOGGER = logging.getLogger(__name__)
 
 CONFIG_PATH_VAR = "WAREHOUSE_CONFIG_FILE"
 CONFIG_PATH_DEFAULT = "settings.yaml"
-CONFIG_PREFIX = "S3Warehouse"
+CONFIG_PREFIX = "DynamoWarehouse"
 
 
 # An encoded dynamodb item
@@ -62,9 +65,33 @@ DynamoClientItem = Mapping[str, Mapping[Literal["S", "N"], str]]
 QueryCriteria = Mapping[str, Union[str, bool, Dict]]
 
 
-class S3Warehouse(API):
+def generate_settings_file(backend: str, dest_path: str = CONFIG_PATH_DEFAULT):
+    """Grabs backend stack outputs and updates the settings file. Creates a new file
+    if one does not exist.
     """
-    The Datafeeds S3 warehouse implementation. Implements the DataWarehouseInterface
+    path = Path(dest_path)
+
+    configs = {}
+    # Simply append if an existing config file exists.
+    if path.is_file():
+        configs = yaml.safe_load(path.read_text())
+
+    backend_outputs = get_stack_output(backend)
+    configs[CONFIG_PREFIX] = {
+        "region_name": backend_outputs["RegionName"],
+        "registry_table_name": backend_outputs["RegistryTable"],
+        "source_table_name": backend_outputs["SourceDataTable"],
+        "source_bucket_name": backend_outputs["SourceBucket"],
+        "parsed_bucket_name": backend_outputs["ParsedBucket"],
+        "bucket_prefix": backend_outputs["StoragePrefix"],
+    }
+    path.write_text(yaml.dump(configs))
+
+
+class DynamoWarehouse(API):
+    """
+    The Datafeeds DynamoDB-based warehouse implementation.
+    Implements the DataWarehouseInterface.
 
     AWS resources used:
         - x1 S3 bucket for storing source files.
@@ -151,7 +178,7 @@ class S3Warehouse(API):
         collection: Optional[str] = None,
     ):
         """
-        Instantiates the S3Warehouse.
+        Instantiates the DynamoWarehouse.
 
         Args:
             config: A Configuration object that contains warehouse init args. If not
@@ -1513,13 +1540,13 @@ class S3Warehouse(API):
         map_enc = lambda val: json.dumps({k: TYPES(v).name for k, v in val.items()})
         type_enc = lambda val: encode(val).serialize()
 
-        parser_enc: Dict[S3Warehouse.PAR, Callable[[Any], str]] = {
+        parser_enc: Dict[DynamoWarehouse.PAR, Callable[[Any], str]] = {
             self.PAR.PKEYS: keys_enc,
             self.PAR.TMAP: map_enc,
             self.PAR.TZ: type_enc,
             self.PAR.DEFAULT: type_enc,
         }
-        registry_enc: Dict[S3Warehouse.REG, Callable[[Any], str]] = {
+        registry_enc: Dict[DynamoWarehouse.REG, Callable[[Any], str]] = {
             self.REG.ID: str,
             self.REG.DB: str,
             self.REG.COL: str,
@@ -1547,13 +1574,13 @@ class S3Warehouse(API):
         map_dec = lambda val: {k: TYPES[v].value for k, v in json.loads(val).items()}
         type_dec = lambda val: decode(Encoded.deserialize(val))
 
-        parser_dec: Dict[S3Warehouse.PAR, Callable[[str], Any]] = {
+        parser_dec: Dict[DynamoWarehouse.PAR, Callable[[str], Any]] = {
             self.PAR.PKEYS: keys_dec,
             self.PAR.TMAP: map_dec,
             self.PAR.TZ: type_dec,
             self.PAR.DEFAULT: type_dec,
         }
-        registry_dec: Dict[S3Warehouse.REG, Callable[[str], Any]] = {
+        registry_dec: Dict[DynamoWarehouse.REG, Callable[[str], Any]] = {
             self.REG.ID: str,
             self.REG.DB: str,
             self.REG.COL: str,

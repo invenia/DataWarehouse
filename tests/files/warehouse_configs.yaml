@@ -1,4 +1,4 @@
-S3Warehouse:
+DynamoWarehouse:
   region_name: test-file-region
   registry_table_name: test-file-registry
   source_table_name: test-file-index
