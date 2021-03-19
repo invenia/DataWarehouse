@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.3.0
+
+### Features
+* Rename S3Warehouse to DynamoWarehouse [!10](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/10)
+* Settings file generator function [!10](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/10)
+* S3Warehouse implementations part 2[!9](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/9)
+
 ## Version 0.2.0
 
 ### Features

@@ -41,7 +41,7 @@ def test_instantiate():
     # Instantiate from default config file path.
     path_str = str(Path("tests/files/warehouse_configs.yaml"))
     os.environ[implementations.CONFIG_PATH_VAR] = path_str
-    warehouse = implementations.S3Warehouse()
+    warehouse = implementations.DynamoWarehouse()
     assert warehouse._region == "test-file-region"
     assert warehouse._registry_table == "test-file-registry"
     assert warehouse._source_table == "test-file-index"
@@ -53,7 +53,7 @@ def test_instantiate():
 
     # If a custom config object is passed in, use that instead.
     cfg = Configuration(str(Path("tests/files/warehouse_configs2.yaml")))
-    warehouse = implementations.S3Warehouse(config=cfg)
+    warehouse = implementations.DynamoWarehouse(config=cfg)
     assert warehouse._region == "test-file-region2"
     assert warehouse._registry_table == "test-file-registry2"
     assert warehouse._source_table == "test-file-index2"
@@ -64,7 +64,7 @@ def test_instantiate():
     assert warehouse._cache_ttl == timedelta(seconds=300)  # the default when not given
 
     # If kw args are passed in, overwrite stuff in config file.
-    warehouse = implementations.S3Warehouse(
+    warehouse = implementations.DynamoWarehouse(
         config=cfg,
         source_table_name=SOURCE_TABLE,
         source_bucket_name=SOURCE_BUCKET,
@@ -80,7 +80,7 @@ def test_instantiate():
     assert warehouse._cache_ttl == timedelta(seconds=300)
 
     # Instantiate from kw args and do not default to config file
-    warehouse = implementations.S3Warehouse(
+    warehouse = implementations.DynamoWarehouse(
         region_name=REGION,
         registry_table_name=REGISTRY_TABLE,
         source_table_name=SOURCE_TABLE,
@@ -100,7 +100,7 @@ def test_instantiate():
 
     # Instantiate with missing required args
     with pytest.raises(exceptions.ArgumentError):
-        warehouse = implementations.S3Warehouse(
+        warehouse = implementations.DynamoWarehouse(
             region_name=REGION,
             registry_table_name=REGISTRY_TABLE,
             source_table_name=SOURCE_TABLE,
