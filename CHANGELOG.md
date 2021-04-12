@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.4.0
+
+### Features
+* Add backend stack minimum version requirement check [!11](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/11)
+
 ## Version 0.3.0
 
 ### Features
