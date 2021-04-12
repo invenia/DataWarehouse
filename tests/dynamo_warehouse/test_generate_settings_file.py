@@ -2,10 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from datawarehouse.implementations import (
-    MIN_BACKEND_VERSION,
-    generate_settings_file,
-)
+from datawarehouse.implementations import MIN_BACKEND_VERSION, generate_settings_file
 
 
 @pytest.fixture()
