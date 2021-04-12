@@ -7,7 +7,12 @@ from inveniautils.stream import SeekableStream
 
 from datawarehouse import exceptions
 from datawarehouse.interface import DataWarehouseInterface as API
-from tests.aws_setup import get_warehouse_sesh, mock_start, mock_stop, setup_resources
+from tests.dynamo_warehouse.aws_setup import (
+    get_warehouse_sesh,
+    mock_start,
+    mock_stop,
+    setup_resources,
+)
 from tests.utils import load_timestamps_2020, register_test_collections
 
 

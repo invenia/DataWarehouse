@@ -8,7 +8,7 @@ from freezegun import freeze_time
 from inveniautils.configuration import Configuration
 
 from datawarehouse import exceptions, implementations
-from tests.aws_setup import (
+from tests.dynamo_warehouse.aws_setup import (
     PARSED_BUCKET,
     REGION,
     REGISTRY_TABLE,
