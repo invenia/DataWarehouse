@@ -1458,7 +1458,6 @@ class DynamoWarehouse(API):
         self,
         file: SeekableStream,
         parser_name: Optional[str] = None,
-        multipart=False,
     ) -> str:
         """Inserts a source file or parsed file into the s3 warehouse.
         If parser_name is supplied, assumes that the file is a parsed_file.
@@ -1480,19 +1479,12 @@ class DynamoWarehouse(API):
         }
         # the s3_client.upload_fileobj() method requires a byte stream
         with ReadAsBytes(file) as byte_stream:
-            if multipart:
-                self._s3_client.upload_fileobj(
-                    Fileobj=byte_stream,
-                    Config=self.S3_CONFIG,
-                    **main_args,  # type: ignore
-                    ExtraArgs=extra_args,
-                )
-            else:
-                self._s3_client.put_object(
-                    Body=file.read(),
-                    **main_args,  # type: ignore
-                    **extra_args,  # type: ignore
-                )
+            self._s3_client.upload_fileobj(
+                Fileobj=byte_stream,
+                Config=self.S3_CONFIG,
+                **main_args,  # type: ignore
+                ExtraArgs=extra_args,
+            )
 
         return s3_key
 
