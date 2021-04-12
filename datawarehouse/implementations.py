@@ -6,6 +6,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
+from distutils.version import LooseVersion as Version
 from pathlib import Path
 from typing import (
     Any,
@@ -51,9 +52,13 @@ from datawarehouse.types import (
     get_type,
 )
 from datawarehouse.utils import ReadAsBytes, get_md5
+from datawarehouse.version import __version__
 
 
 LOGGER = logging.getLogger(__name__)
+
+# Constants
+MIN_BACKEND_VERSION = "v2.0.0"
 
 CONFIG_PATH_VAR = "WAREHOUSE_CONFIG_FILE"
 CONFIG_PATH_DEFAULT = "settings.yaml"
@@ -84,7 +89,18 @@ def generate_settings_file(backend: str, dest_path: str = CONFIG_PATH_DEFAULT):
         "source_bucket_name": backend_outputs["SourceBucket"],
         "parsed_bucket_name": backend_outputs["ParsedBucket"],
         "bucket_prefix": backend_outputs["StoragePrefix"],
+        "backend_version": backend_outputs["StackVersion"],
     }
+
+    # error if backend version < MIN_BACKEND_VERSION
+    backend_version = configs[CONFIG_PREFIX]["backend_version"]
+    if Version(backend_version) < Version(MIN_BACKEND_VERSION):
+        raise Exception(
+            f"The BackendStack '{backend}' has version '{backend_version}' but "
+            f"DynamoWarehouse-{__version__} requires a BackendStack with min version"
+            f"'{MIN_BACKEND_VERSION}'."
+        )
+
     path.write_text(yaml.dump(configs))
 
 
@@ -1442,6 +1458,7 @@ class DynamoWarehouse(API):
         self,
         file: SeekableStream,
         parser_name: Optional[str] = None,
+        multipart=False,
     ) -> str:
         """Inserts a source file or parsed file into the s3 warehouse.
         If parser_name is supplied, assumes that the file is a parsed_file.
@@ -1463,12 +1480,19 @@ class DynamoWarehouse(API):
         }
         # the s3_client.upload_fileobj() method requires a byte stream
         with ReadAsBytes(file) as byte_stream:
-            self._s3_client.upload_fileobj(
-                Fileobj=byte_stream,
-                Config=self.S3_CONFIG,
-                **main_args,  # type: ignore
-                ExtraArgs=extra_args,
-            )
+            if multipart:
+                self._s3_client.upload_fileobj(
+                    Fileobj=byte_stream,
+                    Config=self.S3_CONFIG,
+                    **main_args,  # type: ignore
+                    ExtraArgs=extra_args,
+                )
+            else:
+                self._s3_client.put_object(
+                    Body=file.read(),
+                    **main_args,  # type: ignore
+                    **extra_args,  # type: ignore
+                )
 
         return s3_key
 
