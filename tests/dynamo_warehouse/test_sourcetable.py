@@ -68,8 +68,12 @@ def test_query_content(warehouse):
     # stores 300 daily interval files from 2020-01-01 to 2020-01-11
     file_ids = set(_store_random_files_2020(warehouse, timedelta(days=1)))
 
-    # not specifying a range should return all source files from the collection,
-    # regardless if content start/end is available
+    # If the ContentStartIndex is used, only entries with content_start will be returned
+    all_results = list(warehouse.query_metadata_items(index=warehouse.INDEXES.CONTENT))
+    assert len(all_results) < len(file_ids)
+
+    # If no Index is specified, returns all entries from the collection regardless if
+    # content start/end is available
     all_results = list(warehouse.query_metadata_items())
     assert len(all_results) == len(file_ids)
 
