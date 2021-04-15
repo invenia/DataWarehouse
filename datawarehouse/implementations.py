@@ -1016,7 +1016,7 @@ class DynamoWarehouse(API):
     def query_metadata_items(
         self,
         query_range: Optional[DatetimeRange] = None,
-        index: API.INDEXES = API.INDEXES.CONTENT,
+        index: Optional[API.INDEXES] = None,
         fields: Optional[Iterable[str]] = None,
         ascending: bool = True,
     ) -> Generator[Dict[str, Any], None, None]:
@@ -1353,18 +1353,21 @@ class DynamoWarehouse(API):
     def _range_query_criteria(
         self,
         query_range: Optional[DatetimeRange] = None,
-        index: API.INDEXES = API.INDEXES.CONTENT,
+        index: Optional[API.INDEXES] = None,
         ascending: bool = True,
     ) -> QueryCriteria:
         """Generates a DynamoDB query criteria to get all entries from the collection
         that overlap with the given query range. Query range is always assumed to be
         inclusive.
         """
-        if query_range is None:
+        if query_range is None and index is None:
             # Always use the ReleaseDateIndex if no range is specified because release
             # date is required for all files. content_start is only required for parsed
             # files.
             index = API.INDEXES.RELEASE
+
+        elif index is None:
+            index = API.INDEXES.CONTENT
 
         # Details about the dynamodb index
         index_name = self.INDEX_INFO[index]["name"]

@@ -459,7 +459,7 @@ class DataWarehouseInterface:
     def query_metadata_items(
         self,
         query_range: Optional[DatetimeRange] = None,
-        index: INDEXES = INDEXES.CONTENT,
+        index: Optional[INDEXES] = None,
         fields: Optional[Iterable[str]] = None,
         ascending: bool = True,
     ) -> Generator[Dict[str, Any], None, None]:
