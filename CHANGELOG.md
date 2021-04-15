@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.4.1
+
+### Fix
+* Do not overwrite Query Index if one is specified [!12](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/12)
+
 ## Version 0.4.0
 
 ### Features
