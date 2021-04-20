@@ -735,7 +735,11 @@ class DynamoWarehouse(API):
 
             self._validate_fields(file.metadata, parsed_file=True)
             self._s3_insert(file, parser)
-            self._update_source_table_item(file_id, file_version, update_map)
+
+            if update_map:
+                # The update map may be empty if nothing has changed. This may happen
+                # when re-parsing a file and no metadata fields has changed.
+                self._update_source_table_item(file_id, file_version, update_map)
 
             resp["source_version"] = file_version
             resp["status_code"] = API.STATUS.SUCCESS

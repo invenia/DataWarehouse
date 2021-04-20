@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.4.2
+
+### Fix
+* Only update Source Data Table item when necessary[!13](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/13)
+
 ## Version 0.4.1
 
 ### Fix
