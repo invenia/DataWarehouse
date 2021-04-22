@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.5.0
+
+### Features
+* Support None Values in Non-required Metadata [!14](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/14)
+
 ## Version 0.4.2
 
 ### Fix
