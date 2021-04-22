@@ -19,6 +19,7 @@ class TestDataTypes:
             pytz.timezone("Zulu"),
             dateutil.tz.tzoffset("UTC-5", -18000),
             timezone(timedelta(hours=4)),
+            None,
         ]
 
         expected_types = [
@@ -31,6 +32,7 @@ class TestDataTypes:
             types.TYPES.TZFILE_PYTZ,
             types.TYPES.TZOFFSET_DATEUTIL,
             types.TYPES.TZOFFSET_TZ,
+            types.TYPES.NONE,
         ]
 
         for i in range(len(supported_input)):
@@ -224,6 +226,21 @@ class TestDataTypes:
             if isinstance(decoded[i], types.TYPES.TZOFFSET_DATEUTIL.value):
                 assert types.decode(encoded[i]).tzname(_dt) == decoded[i].tzname(_dt)
 
+    def test_none(self):
+        # test encoding a None value
+        encoded = types.Encoded(types.NONE_TYPE_STR, types.TYPES.NONE)
+        assert types.encode(None) == encoded
+
+        # test decoding all types with None values
+        for _type in types.TYPES:
+            encoded = types.Encoded(types.NONE_TYPE_STR, _type)
+            assert types.decode(encoded) is None
+
+        # test invalid None encoding
+        encoded = types.Encoded("None", types.TYPES.NONE)
+        with pytest.raises(ValueError):
+            types.decode(encoded)
+
     def test_invalid(self):
         invalid_types = [
             # unsupported timezones
@@ -249,6 +266,7 @@ class TestDataTypes:
 class TestEncoded:
     def test_serializer(self):
         deserialized = [
+            types.Encoded(types.NONE_TYPE_STR, types.TYPES.NONE),
             types.Encoded("-7200", types.TYPES.TZOFFSET_TZ),
             types.Encoded("-7200", types.TYPES.INT),
             types.Encoded("Zulu", types.TYPES.TZFILE_PYTZ),
@@ -263,6 +281,7 @@ class TestEncoded:
         ]
 
         serialized = [
+            '["<class \'NoneType\'>", "NONE"]',
             '["-7200", "TZOFFSET_TZ"]',
             '["-7200", "INT"]',
             '["Zulu", "TZFILE_PYTZ"]',

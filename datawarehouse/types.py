@@ -10,8 +10,12 @@ import pytz
 
 LOGGER = logging.getLogger(__name__)
 
+NONE_TYPE = type(None)
+NONE_TYPE_STR = str(NONE_TYPE)
+
 
 class TYPES(enum.Enum):
+    NONE = NONE_TYPE
     STR = str
     INT = int
     BOOL = bool
@@ -30,6 +34,7 @@ class TYPES(enum.Enum):
 
 
 AllowedTypes = Union[
+    Type[NONE_TYPE],
     Type[str],
     Type[int],
     Type[bool],
@@ -48,6 +53,7 @@ TzTypes = Union[
 ]
 
 ValueTypes = Union[
+    NONE_TYPE,
     str,
     int,
     bool,
@@ -108,7 +114,9 @@ def encode(value: ValueTypes) -> Encoded:
     """
     val_type = get_type(value)
 
-    if isinstance(value, bool):
+    if value is None:
+        val_str = NONE_TYPE_STR
+    elif isinstance(value, bool):
         val_str = str(int(value))
     elif isinstance(value, (str, int, float)):
         val_str = str(value)
@@ -130,9 +138,7 @@ def encode(value: ValueTypes) -> Encoded:
     elif isinstance(value, timezone):
         val_str = str(int(_get_fixed_utcoffset(value).total_seconds()))
     else:
-        raise TypeError(
-            "Missing encoder for type '%s'. Please implement one.", val_type
-        )
+        raise TypeError(f"Missing encoder for type '{val_type}'. Please implement one.")
 
     return Encoded(val_str, val_type)
 
@@ -149,10 +155,19 @@ def decode(encoded: Encoded) -> ValueTypes:
     """
     _str, _type = encoded
     if not isinstance(_type, TYPES):
-        raise ValueError("Type '%s' is invalid.", _type)
+        raise ValueError(f"Type '{_type}' is invalid.")
 
-    if _type == TYPES.STR:
-        decoded = _str  # type: ValueTypes
+    if _type == TYPES.NONE and _str != NONE_TYPE_STR:
+        raise ValueError(
+            f"Encoded string '{_str}' for 'TYPES.NONE' is invalid. "
+            f"None types must be encoded as '{NONE_TYPE_STR}'"
+        )
+
+    decoded: ValueTypes
+    if _str == NONE_TYPE_STR:
+        decoded = None
+    elif _type == TYPES.STR:
+        decoded = _str
     elif _type == TYPES.INT:
         decoded = int(_str)
     elif _type == TYPES.FLOAT:
@@ -177,7 +192,7 @@ def decode(encoded: Encoded) -> ValueTypes:
     elif _type == TYPES.TZOFFSET_TZ:
         decoded = timezone(timedelta(seconds=int(_str)))
     else:
-        raise TypeError("Missing decoder for type '%s'. Please implement one.", _type)
+        raise TypeError(f"Missing decoder for type '{_type}'. Please implement one.")
 
     return decoded
 
@@ -189,5 +204,5 @@ def _get_fixed_utcoffset(tz: tzinfo) -> timedelta:
     _dt = datetime(1111, 1, 1)  # just an arbitrary datetime object
     offset_delta = tz.utcoffset(_dt)  # _dt will be ignored
     if offset_delta is None:
-        raise ValueError("Expected an offset delta from %s but got 'None'", tz)
+        raise ValueError(f"Expected an offset delta from {tz} but got 'None'")
     return offset_delta
