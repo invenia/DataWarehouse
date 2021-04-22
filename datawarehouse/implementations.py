@@ -1626,6 +1626,12 @@ class DynamoWarehouse(API):
         are not strings are dropped, along with a warning log.
         """
         encoded = {}
+        required_fields = (
+            self.RETRIEVED_FIELD,
+            self.RELEASE_FIELD,
+            *self.required_metadata_fields,
+        )
+
         # Encodes everything except for datetimes into string using types.encode()
         for k, v in entry.items():
             field_type = self._type(k)
@@ -1634,10 +1640,10 @@ class DynamoWarehouse(API):
             # type mismatch, raise an error except for None vals in non-required fields
             if field_type is not None and field_type != val_type:
 
-                if v is None and k not in self.required_metadata_fields:
+                if v is None and k not in required_fields:
                     encoded[k] = encode(v).val_str
                 else:
-                    raise TypeError(
+                    raise MetadataError(
                         f"Expected type for '{k}' is '{field_type}', got '{val_type}'."
                     )
 

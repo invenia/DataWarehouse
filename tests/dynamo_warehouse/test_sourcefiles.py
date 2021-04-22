@@ -302,6 +302,13 @@ def test_store_missing_fields(warehouse):
         with pytest.raises(exceptions.MetadataError):
             warehouse.store(file)
 
+    # storing the file will fail if any one of the required fields have None values
+    for field in required:
+        file = SeekableStream(content, **files[0].metadata)
+        file.metadata[field] = None
+        with pytest.raises(Exception):
+            warehouse.store(file)
+
 
 def test_retrieve_metadata_only(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
