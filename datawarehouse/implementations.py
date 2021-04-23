@@ -34,6 +34,7 @@ from boto3.s3.transfer import TransferConfig
 from datafeedscommon.aws.cloudformation import get_stack_output
 from datafeedscommon.aws.sts import assume_iam_role
 from inveniautils.configuration import Configuration
+from inveniautils.dates import round_datetime
 from inveniautils.datetime_range import DatetimeRange
 from inveniautils.stream import SeekableStream, copy as stream_copy
 from mypy_boto3_dynamodb.client import DynamoDBClient
@@ -703,6 +704,8 @@ class DynamoWarehouse(API):
 
         def store_source():
             metadata = file.metadata
+            self._preprocess_metadata(metadata)
+
             metadata[self.SRC.HASH.value] = self._generate_hash_key(metadata)
             metadata[self.SRC.RANGE.value] = self._generate_range_key(metadata)
             metadata[self.COLLECTION_ID] = self._get_collection_id()
@@ -1700,3 +1703,12 @@ class DynamoWarehouse(API):
     def _sanitize_dynamo(self, entry: DynamoClientItem) -> Dict[str, str]:
         """ Sanitizes a DynamoDB Item by striping off Type info. """
         return {k: v["S"] if "S" in v else v["N"] for k, v in entry.items()}
+
+    def _preprocess_metadata(self, entry: Dict[str, ValueTypes]):
+        """ Proprocess file metadata before storing. """
+        for key, val in entry.items():
+
+            if isinstance(val, datetime):
+                # The warehouse only supports datetime precision up to seconds.
+                # This ensure consistency when comparing live vs stored values.
+                entry[key] = round_datetime(val, timedelta(seconds=1), floor=True)
