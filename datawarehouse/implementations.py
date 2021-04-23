@@ -696,6 +696,7 @@ class DynamoWarehouse(API):
             ArgumentError: If there are any invalid combinations of arguments.
             MetadataError: If there are any problems with the file metadata.
         """
+        self._preprocess_metadata(file.metadata)
         pkeys = self.get_primary_key(file.metadata)
         # the return object
         resp: Dict[str, Union[Tuple[ValueTypes, ...], str, API.STATUS]]
@@ -704,8 +705,6 @@ class DynamoWarehouse(API):
 
         def store_source():
             metadata = file.metadata
-            self._preprocess_metadata(metadata)
-
             metadata[self.SRC.HASH.value] = self._generate_hash_key(metadata)
             metadata[self.SRC.RANGE.value] = self._generate_range_key(metadata)
             metadata[self.COLLECTION_ID] = self._get_collection_id()

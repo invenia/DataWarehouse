@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 0.5.1
+
+### Features
+* Round down datetimes to seconds precision [!15](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/15)
+
+
 ## Version 0.5.0
 
 ### Features
