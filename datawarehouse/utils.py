@@ -37,7 +37,7 @@ class ReadAsBytes:
 
 
 def get_md5(file: SeekableStream) -> str:
-    """ Computes the MD5 hash for a source file. """
+    """Computes the MD5 hash for a source file."""
     file_hash = hashlib.md5()
     # hash in chunks, MD5 has 128-Byte digest blocks
     size = 8192

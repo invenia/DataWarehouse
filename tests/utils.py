@@ -11,7 +11,7 @@ fromiso = datetime.fromisoformat
 
 
 def get_streams(database=None, collection=None, parsed=False):
-    """ Loads in a bunch of SeekableStreams from a test file."""
+    """Loads in a bunch of SeekableStreams from a test file."""
     streams = []
     loaded = yaml.safe_load(Path("tests/files/warehouse_test_files.yaml").read_text())
     dt_fields = (
@@ -80,7 +80,7 @@ def load_test_collections_file():
 
 
 def load_timestamps_2020():
-    """ Loads in 300 randomly generated timestamps (in 2020) from a file. """
+    """Loads in 300 randomly generated timestamps (in 2020) from a file."""
     return [
         int(line.strip())
         for line in Path("tests/files/random_ts_2020.txt").open().readlines()

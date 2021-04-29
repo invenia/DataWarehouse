@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from inveniautils.stream import SeekableStream
@@ -25,7 +25,7 @@ def warehouse():
 
 
 def _load_file_versions(warehouse):
-    """ Helper method to load in a few file versions. """
+    """Helper method to load in a few file versions."""
     # pkey: "url"  -  type_map: {url: STR, filename: STR}
     warehouse.select_collection("test_collection", database="test_database")
     # This loads in 4 SeekableStreams with the same Primary Key but unique content.
@@ -155,6 +155,57 @@ def test_store_and_force_store_duplicate_versions(warehouse):
     file_key = warehouse.get_primary_key(file.metadata)
     stored_versions = warehouse.retrieve_versions(file_key)
     assert len(list(stored_versions)) == 3
+
+
+def test_store_previous_releases(warehouse):
+    # -pkey: "url" -rkey: "last-modified" -type_map: {url: STR, last-modified: DATETIME}
+    warehouse.select_collection("test_last_modified", database="test_database")
+
+    ref_dt = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    get_metadata = lambda dt: {
+        "url": "http://url-1",
+        "filename": "hello_world_1.txt",
+        "retrieved_date": dt,
+        "release_date": dt,
+        "last-modified": dt,
+    }
+
+    # multiple versions of a file (they have the same pkey)
+    file1 = SeekableStream("content1", **get_metadata(ref_dt))
+    file2 = SeekableStream("content2", **get_metadata(ref_dt + timedelta(days=1)))
+    file3 = SeekableStream("content3", **get_metadata(ref_dt + timedelta(days=2)))
+    # new release but content not changed
+    file3b = SeekableStream("content3", **get_metadata(ref_dt + timedelta(days=3)))
+
+    # initial file, store succeeds
+    response = warehouse.store(file2)
+    assert response["status_code"] == warehouse.STATUS.SUCCESS
+    file2.seek(0)
+
+    # storing the same file again fails
+    response = warehouse.store(file2)
+    assert response["status_code"] == warehouse.STATUS.ALREADY_EXIST
+    file2.seek(0)
+
+    # storing a newer release succeeds
+    response = warehouse.store(file3)
+    assert response["status_code"] == warehouse.STATUS.SUCCESS
+    file3.seek(0)
+
+    # storing a newer release but with same content fails
+    response = warehouse.store(file3b)
+    assert response["status_code"] == warehouse.STATUS.ALREADY_EXIST
+    file3b.seek(0)
+
+    # storing the previous file fails, already stored in the past
+    response = warehouse.store(file2)
+    assert response["status_code"] == warehouse.STATUS.ALREADY_EXIST
+    file2.seek(0)
+
+    # storing an earlier file that was never stored succeeds
+    response = warehouse.store(file1)
+    assert response["status_code"] == warehouse.STATUS.SUCCESS
+    file1.seek(0)
 
 
 def test_store_and_retrieve_specify_version(warehouse):

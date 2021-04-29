@@ -143,15 +143,15 @@ class DataWarehouseInterface:
         raise NotImplementedError
 
     def list_databases_and_collections(self) -> Dict[str, List[str]]:
-        """ Lists all registered databases and collections in the data warehouse. """
+        """Lists all registered databases and collections in the data warehouse."""
         raise NotImplementedError
 
     def list_databases(self) -> List[str]:
-        """ Lists all registered databases in the data warehouse. """
+        """Lists all registered databases in the data warehouse."""
         raise NotImplementedError
 
     def list_collections(self) -> List[str]:
-        """ Lists all registered collections in the current database. """
+        """Lists all registered collections in the current database."""
         raise NotImplementedError
 
     def select_collection(self, collection: str, *, database: Optional[str] = None):
@@ -169,12 +169,12 @@ class DataWarehouseInterface:
 
     @property
     def database(self) -> str:
-        """ The currently selected database. """
+        """The currently selected database."""
         raise NotImplementedError
 
     @property
     def collection(self) -> str:
-        """ The currently selected collection. """
+        """The currently selected collection."""
         raise NotImplementedError
 
     @property

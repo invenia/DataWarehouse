@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from distutils.version import LooseVersion as Version
+from operator import itemgetter
 from pathlib import Path
 from typing import (
     Any,
@@ -431,7 +432,7 @@ class DynamoWarehouse(API):
         self._update_cache(entry)
 
     def list_databases_and_collections(self) -> Dict[str, List[str]]:
-        """ Lists all registered databases and collections in the data warehouse. """
+        """Lists all registered databases and collections in the data warehouse."""
         results: Dict[str, List[str]] = {}
         for entry in self._iter_registry():
             db = entry[self.REG.DB.value]
@@ -444,11 +445,11 @@ class DynamoWarehouse(API):
         return results
 
     def list_databases(self) -> List[str]:
-        """ Lists all registered databases in the data warehouse. """
+        """Lists all registered databases in the data warehouse."""
         return sorted(self.list_databases_and_collections().keys())
 
     def list_collections(self) -> List[str]:
-        """ Lists all registered collections in the current database. """
+        """Lists all registered collections in the current database."""
         return sorted(self.list_databases_and_collections()[self.database])
 
     def select_collection(self, collection: str, *, database: Optional[str] = None):
@@ -474,14 +475,14 @@ class DynamoWarehouse(API):
 
     @property
     def database(self) -> str:
-        """ The currently selected database. """
+        """The currently selected database."""
         if self._database is None:
             raise OperationError("No database selected.")
         return self._database
 
     @property
     def collection(self) -> str:
-        """ The currently selected collection. """
+        """The currently selected collection."""
         if self._collection is None:
             raise OperationError("No collection selected.")
         return self._collection
@@ -751,26 +752,50 @@ class DynamoWarehouse(API):
             store_parsed()
         elif force_store:
             store_source()
-        elif compare_source:
-            # if a compare method is supplied when storing a file
-            existing = self.retrieve(pkeys)
-            if existing and compare_source(existing, file) is True:
-                resp["source_version"] = self.get_source_version(existing.metadata)
-                resp["status_code"] = API.STATUS.ALREADY_EXIST
-            else:
-                store_source()
         else:
-            stored_metadata = self.retrieve(pkeys, metadata_only=True)
-            if stored_metadata:
+            stored_versions = self.retrieve_versions(pkeys, metadata_only=True)
+
+            # filter out stored entries that were released after the current file
+            try:
+                file_release = file.metadata[self.RELEASE_FIELD]
+            except KeyError as e:
+                raise MetadataError from e
+
+            filter_func = lambda r: r[self.RELEASE_FIELD] <= file_release
+            filtered_versions = filter(filter_func, stored_versions)
+
+            # grab the max release of the filtered entries, if any
+            stored_meta: Optional[Dict[str, ValueTypes]]
+            try:
+                stored_meta = max(filtered_versions, key=itemgetter(self.RELEASE_FIELD))
+            except ValueError:
+                stored_meta = None
+
+            # no file is availabe before the current file's release
+            if not stored_meta:
+                store_source()
+
+            # if a compare method is supplied when storing a file
+            elif compare_source:
+                stored_file = self.retrieve(
+                    primary_key=self.get_primary_key(stored_meta),
+                    source_version=self.get_source_version(stored_meta),
+                )
+                if compare_source(stored_file, file) is True:
+                    resp["source_version"] = self.get_source_version(stored_meta)
+                    resp["status_code"] = API.STATUS.ALREADY_EXIST
+                else:
+                    store_source()
+            else:
                 mod_key = self.LAST_MODIFIED_FIELD
                 md5_hash = get_md5(file)
                 # never store identical files.
-                if stored_metadata[self.MD5_FIELD] == md5_hash:
+                if stored_meta[self.MD5_FIELD] == md5_hash:
                     store = False
                 # If "last-modified" is set but didn't change, skip storing as well.
                 elif (
                     mod_key in self.required_metadata_fields
-                    and stored_metadata[mod_key] == file.metadata[mod_key]
+                    and stored_meta[mod_key] == file.metadata[mod_key]
                 ):
                     store = False
                 else:
@@ -779,11 +804,8 @@ class DynamoWarehouse(API):
                 if store:
                     store_source()
                 else:
-                    resp["source_version"] = self.get_source_version(stored_metadata)
+                    resp["source_version"] = self.get_source_version(stored_meta)
                     resp["status_code"] = API.STATUS.ALREADY_EXIST
-            else:
-                store_source()
-
         return resp
 
     @overload
@@ -1148,7 +1170,7 @@ class DynamoWarehouse(API):
         return client
 
     def _renew_sesh(self):
-        """ Renews the assumed role session. Only necessary if a role is used. """
+        """Renews the assumed role session. Only necessary if a role is used."""
         sesh, expiry = assume_iam_role(
             role_arn=self._role_arn,
             sesh_name=self.__class__.__name__,
@@ -1163,14 +1185,14 @@ class DynamoWarehouse(API):
     def _get_collection_id(
         self, db: Optional[str] = None, coll: Optional[str] = None
     ) -> str:
-        """ Generates the collection id """
+        """Generates the collection id"""
         if not (db and coll):
             db = self.database
             coll = self.collection
         return "_".join([db, coll])
 
     def _generate_range_key(self, metadata: Dict[str, ValueTypes]) -> str:
-        """ Generates the Dynamodb table range key (source_version) for the file. """
+        """Generates the Dynamodb table range key (source_version) for the file."""
         if self.RETRIEVED_FIELD not in metadata:
             raise MetadataError(f"{self.RETRIEVED_FIELD} is missing from the metadata.")
 
@@ -1273,7 +1295,7 @@ class DynamoWarehouse(API):
         range_key: str,
         update_map: Dict[str, ValueTypes],
     ):
-        """ Updates a source table entry. """
+        """Updates a source table entry."""
         if not update_map:
             raise ArgumentError("Update map is empty.")
 
@@ -1498,12 +1520,12 @@ class DynamoWarehouse(API):
         return s3_key
 
     def _update_cache(self, row: Dict[str, Any]):
-        """ Update the cache with a new entry. """
+        """Update the cache with a new entry."""
         _id = row[self.REG.ID.value]
         self._reg_cache[_id] = (copy.deepcopy(row), datetime.now(pytz.utc))
 
     def _get_cached(self, db: str, coll: str) -> Optional[Dict[str, Any]]:
-        """ Gets a cached entry. Returns None if one doesn't exist or has expired. """
+        """Gets a cached entry. Returns None if one doesn't exist or has expired."""
         _id = self._get_collection_id(db, coll)
         if _id in self._reg_cache:
             row, time = self._reg_cache[_id]
@@ -1555,12 +1577,12 @@ class DynamoWarehouse(API):
             raise OperationError(f"Invalid collection '{coll}' and database '{db}'")
 
     def _type(self, metadata_key: str) -> Optional[AllowedTypes]:
-        """ Helper method to get the type of a metadata field. """
+        """Helper method to get the type of a metadata field."""
         key_type = self.metadata_type_map.get(metadata_key)
         return key_type if key_type else self.EXTENDED_MAPS.get(metadata_key)
 
     def _encode_registry(self, entry: Dict[str, Any]) -> DynamoClientItem:
-        """ Encodes a registry to prep it for storing in DDB. """
+        """Encodes a registry to prep it for storing in DDB."""
         keys_enc = lambda val: json.dumps(list(val))
         map_enc = lambda val: json.dumps({k: TYPES(v).name for k, v in val.items()})
         type_enc = lambda val: encode(val).serialize()
@@ -1594,7 +1616,7 @@ class DynamoWarehouse(API):
         return {k: {"S": v} for k, v in strings.items()}
 
     def _decode_registry(self, entry: DynamoClientItem) -> Dict[str, Any]:
-        """ Decodes a registry entry from DDB. """
+        """Decodes a registry entry from DDB."""
         keys_dec = lambda val: tuple(json.loads(val))
         map_dec = lambda val: {k: TYPES[v].value for k, v in json.loads(val).items()}
         type_dec = lambda val: decode(Encoded.deserialize(val))
@@ -1692,7 +1714,7 @@ class DynamoWarehouse(API):
         return decoded
 
     def _format_dynamo(self, entry: Dict[str, str]) -> DynamoClientItem:
-        """ Formats an encoded metadata entry into the DynamoDB Item format. """
+        """Formats an encoded metadata entry into the DynamoDB Item format."""
         number_types = (datetime, int)
         return {
             key: {"N" if self._type(key) in number_types else "S": val}
@@ -1700,11 +1722,11 @@ class DynamoWarehouse(API):
         }
 
     def _sanitize_dynamo(self, entry: DynamoClientItem) -> Dict[str, str]:
-        """ Sanitizes a DynamoDB Item by striping off Type info. """
+        """Sanitizes a DynamoDB Item by striping off Type info."""
         return {k: v["S"] if "S" in v else v["N"] for k, v in entry.items()}
 
     def _preprocess_metadata(self, entry: Dict[str, ValueTypes]):
-        """ Proprocess file metadata before storing. """
+        """Proprocess file metadata before storing."""
         for key, val in entry.items():
 
             if isinstance(val, datetime):
