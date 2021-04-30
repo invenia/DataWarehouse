@@ -777,10 +777,9 @@ class DynamoWarehouse(API):
 
             # if a compare method is supplied when storing a file
             elif compare_source:
-                stored_file = self.retrieve(
-                    primary_key=self.get_primary_key(stored_meta),
-                    source_version=self.get_source_version(stored_meta),
-                )
+                version = self.get_source_version(stored_meta)
+                stored_file = self.retrieve(primary_key=pkeys, source_version=version)
+
                 if compare_source(stored_file, file) is True:
                     resp["source_version"] = self.get_source_version(stored_meta)
                     resp["status_code"] = API.STATUS.ALREADY_EXIST
