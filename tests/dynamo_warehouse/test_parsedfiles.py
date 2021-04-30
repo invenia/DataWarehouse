@@ -31,7 +31,7 @@ def _generate_parsed_file(content, source_metadata):
 
 
 def _store_source_files(warehouse):
-    """ Helper method to store some source files into the test collection. """
+    """Helper method to store some source files into the test collection."""
     # pkey: "url"  -  type_map: {url: STR, filename: STR}
     warehouse.select_collection("test_collection", database="test_database")
     # This loads in 4 SeekableStreams with the same Primary Key but unique content.
