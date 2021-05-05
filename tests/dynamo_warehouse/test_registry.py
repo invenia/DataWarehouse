@@ -386,6 +386,12 @@ def test_register_and_update_parsers(warehouse):
             "row_type_map": {"key1": int, "key2": str, "key10": str},
             "timezone": pytz.timezone("Zulu"),
         },
+        # test storing collection-type type-maps
+        "second_parser_updated_again": {
+            "primary_key_fields": ("key1", "key2", "key10"),
+            "row_type_map": {"key1": int, "key2": list, "key10": tuple},
+            "timezone": pytz.timezone("Zulu"),
+        },
     }
 
     # the first registered parser is auto default
@@ -443,6 +449,18 @@ def test_register_and_update_parsers(warehouse):
     assert warehouse.default_parser_pkey_fields == parsers[par2up]["primary_key_fields"]
     assert warehouse.default_parser_type_map == parsers[par2up]["row_type_map"]
     assert warehouse.default_parser_timezone == parsers[par2up]["timezone"]
+
+    # Update parser 2 with different attributes
+    par2up2 = "second_parser_updated_again"
+    warehouse.update_parsed_registry(
+        database="miso",
+        collection="load",
+        parser_name=par2,
+        **parsers[par2up2],
+    )
+    # default parser still not changed
+    assert warehouse.default_parser_name == "second_parser"
+    assert warehouse.default_parser_type_map == parsers[par2up2]["row_type_map"]
 
     # register parser for non-existent collection, this will fail.
     with pytest.raises(exceptions.OperationError):

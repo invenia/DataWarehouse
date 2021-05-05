@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.6.0
+
+### Features
+* Support storing collection-typed type-maps [!17](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/17)
+
 ## Version 0.5.2
 
 ### Fixes
