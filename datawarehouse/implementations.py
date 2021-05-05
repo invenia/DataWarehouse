@@ -44,8 +44,8 @@ from mypy_boto3_s3.client import S3Client
 from datawarehouse.exceptions import ArgumentError, MetadataError, OperationError
 from datawarehouse.interface import DataWarehouseInterface as API
 from datawarehouse.types import (
-    TYPES,
     TYPE_MAP_TYPES,
+    TYPES,
     AllowedTypes,
     Encoded,
     TzTypes,
@@ -1583,6 +1583,7 @@ class DynamoWarehouse(API):
 
     def _encode_registry(self, entry: Dict[str, Any]) -> DynamoClientItem:
         """Encodes a registry to prep it for storing in DDB."""
+
         def type_to_str(type_class):
             try:
                 return TYPES(type_class).name
@@ -1623,6 +1624,7 @@ class DynamoWarehouse(API):
 
     def _decode_registry(self, entry: DynamoClientItem) -> Dict[str, Any]:
         """Decodes a registry entry from DDB."""
+
         def str_to_type(type_str):
             try:
                 return TYPES[type_str].value
