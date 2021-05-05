@@ -14,6 +14,14 @@ NONE_TYPE = type(None)
 NONE_TYPE_STR = str(NONE_TYPE)
 
 
+# Collection types are used by some parsers, eg. in ercot_electrically_similar_nodes.
+# The warehouse will only use this to encode parser type maps, not values.
+# The warehouse currently does not support collection-typed values.
+class TYPE_MAP_TYPES(enum.Enum):
+    TUPLE = tuple
+    LIST = list
+
+
 class TYPES(enum.Enum):
     NONE = NONE_TYPE
     STR = str

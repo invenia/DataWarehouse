@@ -45,6 +45,7 @@ from datawarehouse.exceptions import ArgumentError, MetadataError, OperationErro
 from datawarehouse.interface import DataWarehouseInterface as API
 from datawarehouse.types import (
     TYPES,
+    TYPE_MAP_TYPES,
     AllowedTypes,
     Encoded,
     TzTypes,
@@ -1582,8 +1583,14 @@ class DynamoWarehouse(API):
 
     def _encode_registry(self, entry: Dict[str, Any]) -> DynamoClientItem:
         """Encodes a registry to prep it for storing in DDB."""
+        def type_to_str(type_class):
+            try:
+                return TYPES(type_class).name
+            except ValueError:
+                return TYPE_MAP_TYPES(type_class).name
+
         keys_enc = lambda val: json.dumps(list(val))
-        map_enc = lambda val: json.dumps({k: TYPES(v).name for k, v in val.items()})
+        map_enc = lambda val: json.dumps({k: type_to_str(v) for k, v in val.items()})
         type_enc = lambda val: encode(val).serialize()
 
         parser_enc: Dict[DynamoWarehouse.PAR, Callable[[Any], str]] = {
@@ -1616,8 +1623,14 @@ class DynamoWarehouse(API):
 
     def _decode_registry(self, entry: DynamoClientItem) -> Dict[str, Any]:
         """Decodes a registry entry from DDB."""
+        def str_to_type(type_str):
+            try:
+                return TYPES[type_str].value
+            except ValueError:
+                return TYPE_MAP_TYPES[type_str].value
+
         keys_dec = lambda val: tuple(json.loads(val))
-        map_dec = lambda val: {k: TYPES[v].value for k, v in json.loads(val).items()}
+        map_dec = lambda val: {k: str_to_type(v) for k, v in json.loads(val).items()}
         type_dec = lambda val: decode(Encoded.deserialize(val))
 
         parser_dec: Dict[DynamoWarehouse.PAR, Callable[[str], Any]] = {
