@@ -1129,7 +1129,14 @@ class DynamoWarehouse(API):
             database: Name of the database.
             collection: Name of the collection.
         """
-        raise NotImplementedError
+        source.select_collection(collection, database=database)
+        dest.select_collection(collection, database=database)
+
+        for metadata in source.query_metadata_items(index=API.INDEXES.RELEASE):
+            pkey = source.get_primary_key(metadata)
+            version = source.get_source_version(metadata)
+            source_file = source.retrieve(pkey, version)
+            dest.store(source_file)
 
     @property
     def _s3_client(self) -> S3Client:
