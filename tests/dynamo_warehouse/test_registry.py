@@ -402,6 +402,8 @@ def test_register_and_update_parsers(warehouse):
         parser_name=par1,
         **parsers[par1],
     )
+    # clear the registry cache so that the registry decoder is actually called
+    warehouse._reg_cache.clear()
     assert warehouse.default_parser_name == par1
     assert warehouse.default_parser_pkey_fields == parsers[par1]["primary_key_fields"]
     assert warehouse.default_parser_type_map == parsers[par1]["row_type_map"]
@@ -416,6 +418,8 @@ def test_register_and_update_parsers(warehouse):
         parser_name=par2,
         **parsers[par2],
     )
+    # clear the registry cache so that the registry decoder is actually called
+    warehouse._reg_cache.clear()
     assert par2 in warehouse.available_parsers
     # default parser still not changed
     assert warehouse.default_parser_name == par1
@@ -430,6 +434,8 @@ def test_register_and_update_parsers(warehouse):
         parser_name=par2,
         promote_default=True,
     )
+    # clear the registry cache so that the registry decoder is actually called
+    warehouse._reg_cache.clear()
     # default parser now changed
     assert warehouse.default_parser_name == par2
     assert warehouse.default_parser_pkey_fields == parsers[par2]["primary_key_fields"]
@@ -444,6 +450,8 @@ def test_register_and_update_parsers(warehouse):
         parser_name=par2,
         **parsers[par2up],
     )
+    # clear the registry cache so that the registry decoder is actually called
+    warehouse._reg_cache.clear()
     # default parser still not changed
     assert warehouse.default_parser_name == "second_parser"
     assert warehouse.default_parser_pkey_fields == parsers[par2up]["primary_key_fields"]
@@ -458,6 +466,8 @@ def test_register_and_update_parsers(warehouse):
         parser_name=par2,
         **parsers[par2up2],
     )
+    # clear the registry cache so that the registry decoder is actually called
+    warehouse._reg_cache.clear()
     # default parser still not changed
     assert warehouse.default_parser_name == "second_parser"
     assert warehouse.default_parser_type_map == parsers[par2up2]["row_type_map"]

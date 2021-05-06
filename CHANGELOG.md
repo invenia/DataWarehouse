@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.6.1
+
+### Fixes
+* Fix an incorrect Exception-check when decoding registry[!18](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/18)
+
 ## Version 0.6.0
 
 ### Features

@@ -1628,7 +1628,7 @@ class DynamoWarehouse(API):
         def str_to_type(type_str):
             try:
                 return TYPES[type_str].value
-            except ValueError:
+            except KeyError:
                 return TYPE_MAP_TYPES[type_str].value
 
         keys_dec = lambda val: tuple(json.loads(val))
