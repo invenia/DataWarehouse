@@ -1526,15 +1526,16 @@ class DynamoWarehouse(API):
         return s3_key
 
     @property
-    def _s3_fields(self):
+    def _s3_fields(self) -> Tuple[str, ...]:
         """
         The S3 object metadata fields. We want to limit which fields we store
         alonside the S3 object because of the size limit.
         """
         if not hasattr(self, "_cached_s3_fields"):
-            self._cached_s3_fields = set(self.primary_key_fields)
-            self._cached_s3_fields.update((key.value for key in DynamoWarehouse.SRC))
-            self._cached_s3_fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
+            fields = set(self.primary_key_fields)
+            fields.update((key.value for key in DynamoWarehouse.SRC))
+            fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
+            self._cached_s3_fields = tuple(sorted(fields))
 
         return self._cached_s3_fields
 
