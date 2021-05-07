@@ -1497,8 +1497,14 @@ class DynamoWarehouse(API):
         """Inserts a source file or parsed file into the s3 warehouse.
         If parser_name is supplied, assumes that the file is a parsed_file.
         """
+        # We want to limit which fields we store alongside the S3 object
+        # because of the S3 metadata size limit.
+        s3_fields = set(self.primary_key_fields)
+        s3_fields.update((key.value for key in DynamoWarehouse.SRC))
+        s3_fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
+
         encoded = self._encode_metadata(file.metadata)
-        metadata = {k: v for k, v in encoded.items() if k in self._s3_fields}
+        metadata = {k: v for k, v in encoded.items() if k in s3_fields}
 
         hash_key = cast(str, metadata[self.SRC.HASH.value])
         range_key = cast(str, metadata[self.SRC.RANGE.value])
@@ -1524,20 +1530,6 @@ class DynamoWarehouse(API):
             )
 
         return s3_key
-
-    @property
-    def _s3_fields(self) -> Tuple[str, ...]:
-        """
-        The S3 object metadata fields. We want to limit which fields we store
-        alongside the S3 object because of the metadata size limit.
-        """
-        if not hasattr(self, "_cached_s3_fields"):
-            fields = set(self.primary_key_fields)
-            fields.update((key.value for key in DynamoWarehouse.SRC))
-            fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
-            self._cached_s3_fields = tuple(sorted(fields))
-
-        return self._cached_s3_fields
 
     def _update_cache(self, row: Dict[str, Any]):
         """Update the cache with a new entry."""
