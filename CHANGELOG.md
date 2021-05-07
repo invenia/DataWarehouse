@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.6.2
+
+### Fixes
+[!19](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/19)
+* Only store important metadata alongside S3 object
+* Use consistent read for DynamoDB GetItem operations
+
 ## Version 0.6.1
 
 ### Fixes
