@@ -274,12 +274,6 @@ class DynamoWarehouse(API):
             self._database = database
             self._collection = collection
 
-        # The S3 object metadata fields.
-        # Limit which fields we store alonside the S3 object because of the size limit.
-        self._s3_fields = set(self.primary_key_fields)
-        self._s3_fields.update((key.value for key in DynamoWarehouse.SRC))
-        self._s3_fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
-
     def update_source_registry(
         self,
         database: str,
@@ -1530,6 +1524,19 @@ class DynamoWarehouse(API):
             )
 
         return s3_key
+
+    @property
+    def _s3_fields(self):
+        """
+        The S3 object metadata fields. We want to limit which fields we store
+        alonside the S3 object because of the size limit.
+        """
+        if not hasattr(self, "_cached_s3_fields"):
+            self._cached_s3_fields = set(self.primary_key_fields)
+            self._cached_s3_fields.update((key.value for key in DynamoWarehouse.SRC))
+            self._cached_s3_fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
+
+        return self._cached_s3_fields
 
     def _update_cache(self, row: Dict[str, Any]):
         """Update the cache with a new entry."""
