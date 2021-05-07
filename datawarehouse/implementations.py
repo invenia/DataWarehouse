@@ -1529,7 +1529,7 @@ class DynamoWarehouse(API):
     def _s3_fields(self) -> Tuple[str, ...]:
         """
         The S3 object metadata fields. We want to limit which fields we store
-        alonside the S3 object because of the size limit.
+        alongside the S3 object because of the metadata size limit.
         """
         if not hasattr(self, "_cached_s3_fields"):
             fields = set(self.primary_key_fields)
