@@ -1119,6 +1119,7 @@ class DynamoWarehouse(API):
         dest: API,
         database: Optional[str] = None,
         collection: Optional[str] = None,
+        progress_bar=True,
     ):
         """
         Migrates databases or collections from one warehouse to another.
@@ -1132,9 +1133,21 @@ class DynamoWarehouse(API):
         source.select_collection(collection, database=database)
         dest.select_collection(collection, database=database)
 
-        for metadata in source.query_metadata_items(index=API.INDEXES.RELEASE):
-            pkey = source.get_primary_key(metadata)
-            version = source.get_source_version(metadata)
+        key = itemgetter(*source.primary_key_fields, "release_date")
+        items = sorted(source.query_metadata_items(index=API.INDEXES.RELEASE), key=key)
+
+        print(f"Migrating {len(items)} files for {database}.{collection}...")
+
+        if progress_bar:
+            try:
+                from tqdm import tqdm
+                items = tqdm(items)
+            except Exception:
+                LOGGER.exception("Unable to display progress bar, tqdm not installed.")
+
+        for item in items:
+            pkey = source.get_primary_key(item)
+            version = source.get_source_version(item)
             source_file = source.retrieve(pkey, version)
             dest.store(source_file)
 
