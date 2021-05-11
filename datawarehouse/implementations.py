@@ -1365,12 +1365,16 @@ class DynamoWarehouse(API):
         range_key: str,
     ) -> Dict[str, ValueTypes]:
         """Gets the dynamo entry for a target file."""
+        # Always use a consistent read because we have a very short window between
+        # storing a source file during the scrape job and retrieving it again for
+        # parsing during the parse job.
         resp = self._dynamo_client.get_item(
             TableName=self._source_table,
             Key={
                 self.SRC.HASH.value: {"S": hash_key},
                 self.SRC.RANGE.value: {"S": range_key},
             },
+            ConsistentRead=True,
         )
         if "Item" in resp:
             sanitized = self._sanitize_dynamo(cast(DynamoClientItem, resp["Item"]))
@@ -1513,7 +1517,15 @@ class DynamoWarehouse(API):
         """Inserts a source file or parsed file into the s3 warehouse.
         If parser_name is supplied, assumes that the file is a parsed_file.
         """
-        metadata = self._encode_metadata(file.metadata)
+        # We want to limit which fields we store alongside the S3 object
+        # because of the S3 metadata size limit.
+        s3_fields = set(self.primary_key_fields)
+        s3_fields.update((key.value for key in DynamoWarehouse.SRC))
+        s3_fields.update(DynamoWarehouse.EXTENDED_MAPS.keys())
+
+        encoded = self._encode_metadata(file.metadata)
+        metadata = {k: v for k, v in encoded.items() if k in s3_fields}
+
         hash_key = cast(str, metadata[self.SRC.HASH.value])
         range_key = cast(str, metadata[self.SRC.RANGE.value])
 
@@ -1648,7 +1660,7 @@ class DynamoWarehouse(API):
         def str_to_type(type_str):
             try:
                 return TYPES[type_str].value
-            except ValueError:
+            except KeyError:
                 return TYPE_MAP_TYPES[type_str].value
 
         keys_dec = lambda val: tuple(json.loads(val))
