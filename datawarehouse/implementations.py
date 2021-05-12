@@ -1153,6 +1153,7 @@ class DynamoWarehouse(API):
             # try to display a progress bar
             try:
                 from tqdm import tqdm
+
                 items = tqdm(items)
             except ModuleNotFoundError:
                 LOGGER.exception("Unable to show progress bar, tqdm not installed.")
@@ -1189,7 +1190,10 @@ class DynamoWarehouse(API):
             for name, dic in results.items():
                 total = sum([len(group) for group in dic.values()])
                 LOGGER.info(
-                    "  %-12s: %s unique pkeys (%s total versions)", name, len(dic), total
+                    "  %-12s: %s unique pkeys (%s total versions)",
+                    name,
+                    len(dic),
+                    total,
                 )
 
     @property
