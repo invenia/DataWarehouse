@@ -526,7 +526,7 @@ class DataWarehouseInterface:
     def migrate(
         source: "DataWarehouseInterface",
         dest: "DataWarehouseInterface",
-        database: Optional[str] = None,
+        database: str,
         collection: Optional[str] = None,
     ):
         """
