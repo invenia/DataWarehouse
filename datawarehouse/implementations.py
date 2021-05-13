@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from distutils.version import LooseVersion as Version
+from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -1117,7 +1118,7 @@ class DynamoWarehouse(API):
     def migrate(
         source: API,
         dest: API,
-        database: Optional[str] = None,
+        database: str,
         collection: Optional[str] = None,
     ):
         """
@@ -1129,7 +1130,71 @@ class DynamoWarehouse(API):
             database: Name of the database.
             collection: Name of the collection.
         """
-        raise NotImplementedError
+        # This will error if the collection is not registered in the source / dest.
+        success = []
+        failed = []
+        duplicate = []
+
+        if collection is None:
+            collections = source.list_databases_and_collections()[database]
+        else:
+            collections = [collection]
+
+        for coll in collections:
+            source.select_collection(coll, database=database)
+            dest.select_collection(coll, database=database)
+
+            key = itemgetter(*source.primary_key_fields, "release_date")
+            queried = source.query_metadata_items(index=API.INDEXES.RELEASE)
+            items = sorted(queried, key=key)
+
+            LOGGER.info("Migrating %s files for %s.%s...", len(items), database, coll)
+
+            # try to display a progress bar
+            try:
+                from tqdm import tqdm
+
+                items = tqdm(items)
+            except ModuleNotFoundError:
+                LOGGER.exception("Unable to show progress bar, tqdm not installed.")
+
+            for item in items:
+                try:
+                    pkey = source.get_primary_key(item)
+                    version = source.get_source_version(item)
+                    source_file = source.retrieve(pkey, version)
+                    resp = dest.store(source_file)
+
+                except Exception:
+                    LOGGER.exception("Failed to migrate file: %s", item)
+                    failed.append(item)
+
+                else:
+                    if resp["status_code"] == API.STATUS.SUCCESS:
+                        success.append(item)
+                    else:
+                        # API.STATUS.ALREADY_EXIST
+                        duplicate.append(item)
+
+            # group migration results
+            key = itemgetter(*source.primary_key_fields)
+            results = {
+                # items are already sorted
+                "all_entries": {k: list(v) for k, v in groupby(items, key=key)},
+                "store_success": {k: list(v) for k, v in groupby(success, key=key)},
+                "store_failed": {k: list(v) for k, v in groupby(failed, key=key)},
+                "already_stored": {k: list(v) for k, v in groupby(duplicate, key=key)},
+            }
+
+            # log the migration stats
+            for name, dic in results.items():
+                total = sum([len(group) for group in dic.values()])
+                LOGGER.info(
+                    "  %-12s: %s unique pkeys (%s total versions)",
+                    name,
+                    len(dic),
+                    total,
+                )
 
     @property
     def _s3_client(self) -> S3Client:
@@ -1157,15 +1222,19 @@ class DynamoWarehouse(API):
         """
         client = self._s3 if name == "s3" else self._dynamo
         renew = self._sesh_expiry is None or datetime.now(pytz.utc) >= self._sesh_expiry
+
         # if a role arn is passed in, use to role credentials.
         if self._role_arn and (renew or client is None):
             if renew:
                 self._renew_sesh()
             self._sesh = cast(boto3.session.Session, self._sesh)  # or mypy complains
             client = self._sesh.client(name, region_name=self._region)
+
         # uses default credentials
         elif client is None:
-            client = boto3.client(name, region_name=self._region)
+            if self._sesh is None:
+                self._sesh = boto3.session.Session()
+            client = self._sesh.client(name, region_name=self._region)
 
         return client
 
