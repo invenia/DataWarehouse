@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.7.0
+
+### Features
+* Implement DynamoWarehouse.migrate [!20](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/20)
+
 ## Version 0.6.2
 
 ### Fixes
