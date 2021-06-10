@@ -135,13 +135,17 @@ def test_query_content(warehouse):
     assert len(results) == 0
 
 
-def test_query_release(warehouse):
+def _test_query_between_range(warehouse, index, date_key):
     # stores 300 daily interval files from 2020-01-01 to 2020-01-11
     file_ids = set(_store_random_files_2020(warehouse, timedelta(days=1)))
-    index = API.INDEXES.RELEASE
 
-    all_results = list(warehouse.query_metadata_items())
-    assert len(all_results) == len(file_ids)
+    all_results = list(warehouse.query_metadata_items(index=index))
+    # All generated files have a release
+    if index == API.INDEXES.RELEASE:
+        assert len(all_results) == len(file_ids)
+    # Half of generated files have a content_start
+    elif index == API.INDEXES.START:
+        assert len(all_results) == len(file_ids) / 2
 
     # query for a specific range
     start = datetime(2020, 3, 3, tzinfo=timezone.utc)
@@ -157,17 +161,17 @@ def test_query_release(warehouse):
 
     # check that the queried content is accurate.
     for row in query_results:
-        assert start <= row[release_key] <= end
+        assert start <= row[date_key] <= end
 
     # check that the inverse is also true.
     for row in all_results:
         _id = (warehouse.get_primary_key(row), warehouse.get_source_version(row))
         if _id not in query_result_ids:
-            assert row[release_key] < start or row[release_key] > end
+            assert row[date_key] < start or row[date_key] > end
 
     # make sure that results are sorted correctly
     for i in range(len(query_results) - 1):
-        assert query_results[i][release_key] <= query_results[i + 1][release_key]
+        assert query_results[i][date_key] <= query_results[i + 1][date_key]
 
     # do a reverse query, everything should be the same except for the ordering
     query_results_2 = list(
@@ -182,7 +186,7 @@ def test_query_release(warehouse):
     assert query_result_ids_2 == query_result_ids
     # assert backwards
     for i in range(len(query_results_2) - 1):
-        assert query_results_2[i][release_key] >= query_results_2[i + 1][release_key]
+        assert query_results_2[i][date_key] >= query_results_2[i + 1][date_key]
 
     # filter for desired fields
     fields = ["url", "retrieved_date"]
@@ -200,6 +204,14 @@ def test_query_release(warehouse):
         warehouse.query_metadata_items(query_range, index=index, ascending=False)
     )
     assert len(results) == 0
+
+
+def test_query_release(warehouse):
+    _test_query_between_range(warehouse, API.INDEXES.RELEASE, release_key)
+
+
+def test_query_start(warehouse):
+    _test_query_between_range(warehouse, API.INDEXES.START, start_key)
 
 
 def test_update_item(warehouse):
