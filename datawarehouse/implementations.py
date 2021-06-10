@@ -1422,7 +1422,7 @@ class DynamoWarehouse(API):
         try:
             self._dynamo_client.update_item(**criteria)  # type: ignore
         except botocore.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":  # type: ignore  # noqa 501
                 raise OperationError(
                     f"DynamoDB Item {hash_key} - {range_key} does not exist."
                 )

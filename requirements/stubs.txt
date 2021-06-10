@@ -1,4 +1,4 @@
-types-PyYAML
 types-freezegun
 types-python-dateutil
 types-pytz
+types-PyYAML
