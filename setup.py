@@ -1,5 +1,7 @@
-from datawarehouse.version import __version__ as version
 from setuptools import find_packages, setup
+
+from datawarehouse.version import __version__ as version
+
 
 with open("requirements/install.txt") as f:
     requirements = f.read().splitlines()
