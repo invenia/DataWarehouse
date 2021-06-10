@@ -39,7 +39,20 @@ class DataWarehouseInterface:
             any point in time.
 
     Constants:
-        INDEXES: An Enum of avaiable indexes to query files by.
+        INDEXES: An Enum of avaiable indexes to query files by. Although the
+            implementation of the query is up to the inheriting class, the purpose of
+            each index is as follows:
+
+                INDEXES.CONTENT:
+                    Query by the entire content range, such that the content_start and
+                    content_end of each item is within the query range.
+
+                INDEXES.RELEASE:
+                    Query by the release date, which must fall within the query range.
+
+                INDEXES.START:
+                    Query by content start only, which must fall within the query range.
+
         STATUS: An Enum of status codes returned by certain warehouse operations.
         CONTENT_START_FIELD: Field name that parsed files should use to indicate the
             start date of contents in the file.
@@ -60,6 +73,7 @@ class DataWarehouseInterface:
     class INDEXES(enum.Enum):
         CONTENT = enum.auto()
         RELEASE = enum.auto()
+        START = enum.auto()
 
     class STATUS(enum.Enum):
         SUCCESS = enum.auto()

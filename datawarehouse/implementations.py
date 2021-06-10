@@ -163,6 +163,11 @@ class DynamoWarehouse(API):
             "hash": API.COLLECTION_ID,
             "range": API.RELEASE_FIELD,
         },
+        API.INDEXES.START: {
+            "name": "ContentStartIndex",
+            "hash": API.COLLECTION_ID,
+            "range": API.CONTENT_START_FIELD,
+        },
     }
 
     MD5_FIELD = "md5"
@@ -1054,6 +1059,22 @@ class DynamoWarehouse(API):
         query_range will correspond to the index being used. Query bounds are always
         inclusive. All metadata items are returned if no range is specified.
 
+        The index argument is used to define criteria for any range queries. The
+        behaviour of the possible index values are as follows:
+
+            API.INDEXES.CONTENT:
+                Return items where content_start and content_end are both
+                within the query_range.
+
+            API.INDEXES.RELEASE:
+                Return items where the release_date is included in the query_range.
+
+            API.INDEXES.START:
+                Return items where content_start is included in the query_range.
+
+        If a query_range is specified but no index, API.INDEXES.RELEASE will be used
+        by default.
+
         Args:
             query_range: The overlapping DatetimeRange to query for.
                 Supports bounds checking and +/- Inf bounds.
@@ -1492,8 +1513,7 @@ class DynamoWarehouse(API):
                 # Then filter for content_end > query_range.start.
                 # use > not => because content_end in the DB is non-inclusive.
                 _filter += f"{end_key} > :min_range OR attribute_not_exists({end_key})"
-
-            else:  # index == API.INDEXES.RELEASE:
+            else:  # index == API.INDEXES.RELEASE or index == API.INDEXES.START:
                 _cond += f" AND {range_key} BETWEEN :min_range AND :max_range"
             # fmt: on
 
