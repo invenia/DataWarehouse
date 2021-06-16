@@ -2,8 +2,9 @@ datafeedscommon>=0.2.0
 inveniautils>=0.5.0
 
 boto3
-# 'essential' contains: CloudFormation, DynamoDB, EC2, Lambda, RDS, S3 and SQS
-# For more info: https://pypi.org/project/boto3-stubs
-boto3-stubs[essential]
 python-dateutil
 pytz
+
+boto3-stubs
+mypy_boto3_dynamodb
+mypy_boto3_s3
