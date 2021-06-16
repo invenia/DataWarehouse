@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.7.1
+
+### Fixes
+* Explicitly install boto3-stubs extensions [!24](https://gitlab.invenia.ca/invenia/Datafeeds/DatafeedsCommon/-/merge_requests/24)
+
 ## Version 0.7.0
 
 ### Features
