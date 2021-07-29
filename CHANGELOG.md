@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.7.2
+
+### Fixes
+* Use a consistent read then getting registry entries [!25](https://gitlab.invenia.ca/invenia/Datafeeds/DatafeedsCommon/-/merge_requests/25)
+
 ## Version 0.7.1
 
 ### Fixes

@@ -1669,6 +1669,7 @@ class DynamoWarehouse(API):
         resp = self._dynamo_client.get_item(
             TableName=self._registry_table,
             Key={self.REG.ID.value: {"S": _id}},
+            ConsistentRead=True,
         )
         if "Item" in resp:
             decoded = self._decode_registry(cast(DynamoClientItem, resp["Item"]))
