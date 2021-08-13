@@ -2,6 +2,7 @@ import enum
 import json
 import logging
 from datetime import datetime, timedelta, timezone, tzinfo
+from decimal import Decimal
 from typing import NamedTuple, Tuple, Type, Union
 
 import dateutil.tz
@@ -28,6 +29,7 @@ class TYPES(enum.Enum):
     INT = int
     BOOL = bool
     FLOAT = float
+    DECIMAL = Decimal
     DATETIME = datetime
     TIMEDELTA = timedelta
     TZFILE_PYTZ = pytz.BaseTzInfo
@@ -47,6 +49,7 @@ AllowedTypes = Union[
     Type[int],
     Type[bool],
     Type[float],
+    Type[Decimal],
     Type[datetime],
     Type[timedelta],
     Type[pytz.BaseTzInfo],
@@ -66,6 +69,7 @@ ValueTypes = Union[
     int,
     bool,
     float,
+    Decimal,
     datetime,
     timedelta,
     TzTypes,
@@ -126,7 +130,7 @@ def encode(value: ValueTypes) -> Encoded:
         val_str = NONE_TYPE_STR
     elif isinstance(value, bool):
         val_str = str(int(value))
-    elif isinstance(value, (str, int, float)):
+    elif isinstance(value, (str, int, float, Decimal)):
         val_str = str(value)
     elif isinstance(value, datetime):
         tz: Union[str, Tuple[str, str]]
@@ -180,6 +184,8 @@ def decode(encoded: Encoded) -> ValueTypes:
         decoded = int(_str)
     elif _type == TYPES.FLOAT:
         decoded = float(_str)
+    elif _type == TYPES.DECIMAL:
+        decoded = Decimal(_str)
     elif _type == TYPES.BOOL:
         decoded = bool(int(_str))
     elif _type == TYPES.DATETIME:

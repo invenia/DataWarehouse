@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import dateutil.tz
 import pytest
@@ -14,6 +15,7 @@ class TestDataTypes:
             1,
             True,
             1.2,
+            Decimal("1.1111"),
             datetime(1111, 2, 3, tzinfo=timezone.utc),
             timedelta(0),
             pytz.timezone("Zulu"),
@@ -27,6 +29,7 @@ class TestDataTypes:
             types.TYPES.INT,
             types.TYPES.BOOL,
             types.TYPES.FLOAT,
+            types.TYPES.DECIMAL,
             types.TYPES.DATETIME,
             types.TYPES.TIMEDELTA,
             types.TYPES.TZFILE_PYTZ,
@@ -81,6 +84,48 @@ class TestDataTypes:
         for i in range(len(decoded)):
             assert types.encode(decoded[i]) == encoded[i]
             assert types.decode(encoded[i]) == decoded[i]
+
+    def test_decimal(self):
+        decoded = [
+            Decimal("0.0"),
+            Decimal("-0"),
+            Decimal("5"),
+            Decimal("43798.9823475"),
+            Decimal("0.001"),
+            Decimal("-9"),
+            Decimal("-78.1"),
+            Decimal("1234567890.1234567890"),
+            Decimal("0.00010000"),
+            Decimal("1E+99"),
+            Decimal("8.6545E-38"),
+            Decimal("Infinity"),
+            Decimal("-Infinity"),
+        ]
+        encoded = [
+            types.Encoded("0.0", types.TYPES.DECIMAL),
+            types.Encoded("-0", types.TYPES.DECIMAL),
+            types.Encoded("5", types.TYPES.DECIMAL),
+            types.Encoded("43798.9823475", types.TYPES.DECIMAL),
+            types.Encoded("0.001", types.TYPES.DECIMAL),
+            types.Encoded("-9", types.TYPES.DECIMAL),
+            types.Encoded("-78.1", types.TYPES.DECIMAL),
+            types.Encoded("1234567890.1234567890", types.TYPES.DECIMAL),
+            types.Encoded("0.00010000", types.TYPES.DECIMAL),
+            types.Encoded("1E+99", types.TYPES.DECIMAL),
+            types.Encoded("8.6545E-38", types.TYPES.DECIMAL),
+            types.Encoded("Infinity", types.TYPES.DECIMAL),
+            types.Encoded("-Infinity", types.TYPES.DECIMAL),
+        ]
+
+        for i in range(len(decoded)):
+            assert types.encode(decoded[i]) == encoded[i]
+            assert types.decode(encoded[i]) == decoded[i]
+
+        decoded = Decimal("NaN")
+        encoded = types.Encoded("NaN", types.TYPES.DECIMAL)
+
+        assert types.encode(decoded) == encoded
+        assert types.decode(encoded).is_nan()
 
     def test_str(self):
         decoded = [
@@ -274,6 +319,7 @@ class TestEncoded:
             types.Encoded("1", types.TYPES.BOOL),
             types.Encoded("1", types.TYPES.INT),
             types.Encoded("0.0", types.TYPES.FLOAT),
+            types.Encoded("0.00", types.TYPES.DECIMAL),
             types.Encoded(
                 '["2020-01-01T12:00:00-05:00", ["[\\"UTC-5\\", \\"-18000\\"]", "TZOFFSET_DATEUTIL"]]',  # noqa E501
                 types.TYPES.DATETIME,
@@ -289,6 +335,7 @@ class TestEncoded:
             '["1", "BOOL"]',
             '["1", "INT"]',
             '["0.0", "FLOAT"]',
+            '["0.00", "DECIMAL"]',
             '["[\\"2020-01-01T12:00:00-05:00\\", [\\"[\\\\\\"UTC-5\\\\\\", \\\\\\"-18000\\\\\\"]\\", \\"TZOFFSET_DATEUTIL\\"]]", "DATETIME"]',  # noqa E501
         ]
 
