@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 0.8.0
+
+### Features
+* Add Decimal to supported types [!26](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/26)
+* Add Date to supported types [!27](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/27)
+	
 ## Version 0.7.2
 
 ### Fixes

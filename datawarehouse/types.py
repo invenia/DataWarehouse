@@ -1,7 +1,7 @@
 import enum
 import json
 import logging
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from decimal import Decimal
 from typing import NamedTuple, Tuple, Type, Union
 
@@ -32,6 +32,7 @@ class TYPES(enum.Enum):
     DECIMAL = Decimal
     DATETIME = datetime
     TIMEDELTA = timedelta
+    DATE = date
     TZFILE_PYTZ = pytz.BaseTzInfo
     TZOFFSET_DATEUTIL = dateutil.tz.tz.tzoffset
     TZOFFSET_TZ = timezone
@@ -52,6 +53,7 @@ AllowedTypes = Union[
     Type[Decimal],
     Type[datetime],
     Type[timedelta],
+    Type[date],
     Type[pytz.BaseTzInfo],
     Type[dateutil.tz.tz.tzoffset],
     Type[timezone],
@@ -71,6 +73,7 @@ ValueTypes = Union[
     float,
     Decimal,
     datetime,
+    date,
     timedelta,
     TzTypes,
 ]
@@ -142,6 +145,8 @@ def encode(value: ValueTypes) -> Encoded:
         val_str = json.dumps([value.isoformat(), tz])
     elif isinstance(value, timedelta):
         val_str = str(value.total_seconds())
+    elif isinstance(value, date):
+        val_str = value.isoformat()
     elif isinstance(value, pytz.BaseTzInfo):
         val_str = value.zone
     elif isinstance(value, dateutil.tz.tz.tzoffset):
@@ -198,6 +203,8 @@ def decode(encoded: Encoded) -> ValueTypes:
             decoded = decoded.astimezone(tz)
     elif _type == TYPES.TIMEDELTA:
         decoded = timedelta(seconds=float(_str))
+    elif _type == TYPES.DATE:
+        decoded = date.fromisoformat(_str)
     elif _type == TYPES.TZFILE_PYTZ:
         decoded = pytz.timezone(_str)
     elif _type == TYPES.TZOFFSET_DATEUTIL:
