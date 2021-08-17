@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import dateutil.tz
@@ -229,6 +229,25 @@ class TestDataTypes:
             assert types.encode(decoded[i]) == encoded[i]
             assert types.decode(encoded[i]) == decoded[i]
 
+    def test_date(self):
+        decoded = [
+            date(1348, 1, 25),
+            date(1727, 5, 31),
+            date(438, 2, 15),
+            date(2033, 8, 1),
+        ]
+
+        encoded = [
+            types.Encoded("1348-01-25", types.TYPES.DATE),
+            types.Encoded("1727-05-31", types.TYPES.DATE),
+            types.Encoded("0438-02-15", types.TYPES.DATE),
+            types.Encoded("2033-08-01", types.TYPES.DATE),
+        ]
+
+        for i in range(len(decoded)):
+            assert types.encode(decoded[i]) == encoded[i]
+            assert types.decode(encoded[i]) == decoded[i]
+
     def test_tzinfo(self):
         decoded = [
             pytz.utc,
@@ -324,6 +343,7 @@ class TestEncoded:
                 '["2020-01-01T12:00:00-05:00", ["[\\"UTC-5\\", \\"-18000\\"]", "TZOFFSET_DATEUTIL"]]',  # noqa E501
                 types.TYPES.DATETIME,
             ),
+            types.Encoded("1495-06-01", types.TYPES.DATE),
         ]
 
         serialized = [
@@ -337,6 +357,7 @@ class TestEncoded:
             '["0.0", "FLOAT"]',
             '["0.00", "DECIMAL"]',
             '["[\\"2020-01-01T12:00:00-05:00\\", [\\"[\\\\\\"UTC-5\\\\\\", \\\\\\"-18000\\\\\\"]\\", \\"TZOFFSET_DATEUTIL\\"]]", "DATETIME"]',  # noqa E501
+            '["1495-06-01", "DATE"]',
         ]
 
         for i in range(len(deserialized)):
