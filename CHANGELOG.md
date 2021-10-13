@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.9.0
+
+### Features
+* Implement Multi-part Download [!28](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/28)
+
 ## Version 0.8.0
 
 ### Features

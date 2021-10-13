@@ -1,5 +1,5 @@
 datafeedscommon>=0.2.0
-inveniautils>=0.5.0
+inveniautils>=0.8.0
 
 boto3
 python-dateutil
