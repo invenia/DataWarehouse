@@ -1565,16 +1565,31 @@ class DynamoWarehouse(API):
         s3_key = self._generate_s3_key(hash_key, range_key, parser_name=parser_name)
 
         try:
-            raw_stream = self._s3_client.get_object(Bucket=bucket, Key=s3_key)["Body"]
-        except self._s3_client.exceptions.NoSuchKey:
-            return None
+            # Multipart download requires a byte stream to be provided to write data to.
+            # This is fine if the final output is a byte-SeekableStream. However, if
+            # we need to convert it to a string-SeekableStream, we may end up doubling
+            # the memory requirements becuase of the duplicate stream. Therefore,
+            # do not use multipart if the final output has to be a string stream.
+            # Unlike the multipart download, the get_object() method returns a boto3
+            # streaming body object, so it is (probably) more memory efficient as we can
+            # convert bytes to strings in chunks.
+            if metadata[self.BYTES_FIELD]:
+                stream = SeekableStream(b"", **metadata)
+                self._s3_client.download_fileobj(
+                    bucket, s3_key, stream, Config=self.S3_CONFIG
+                )
+            else:
+                stream = SeekableStream("", **metadata)
+                cursor = self._s3_client.get_object(Bucket=bucket, Key=s3_key)["Body"]
+                # byte -> string conversion is done in chunks
+                stream_copy(cursor, stream._content)
 
-        if metadata[self.BYTES_FIELD] is True:
-            return SeekableStream(raw_stream, **metadata)
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+                return None
+            raise
+
         else:
-            stream = SeekableStream("", **metadata)
-            # SeekableStream API currently doesn't support writes.
-            stream_copy(raw_stream, stream._content)
             stream.seek(0)
             return stream
 
