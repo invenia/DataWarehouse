@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.10.0
+
+### Features
+* Return warehouse configs as a dictionary when generating settings file [!29](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/29)
+
 ## Version 0.9.0
 
 ### Features
