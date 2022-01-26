@@ -1,4 +1,4 @@
-datafeedscommon>=0.2.0
+datafeedscommon>=0.9.0
 inveniautils>=0.8.0
 
 boto3

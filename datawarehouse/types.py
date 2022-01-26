@@ -148,7 +148,7 @@ def encode(value: ValueTypes) -> Encoded:
     elif isinstance(value, date):
         val_str = value.isoformat()
     elif isinstance(value, pytz.BaseTzInfo):
-        val_str = value.zone
+        val_str = value.zone  # type: ignore
     elif isinstance(value, dateutil.tz.tz.tzoffset):
         offset_secs = str(int(_get_fixed_utcoffset(value).total_seconds()))
         val_str = json.dumps([value.tzname(None), offset_secs])

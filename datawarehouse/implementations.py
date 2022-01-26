@@ -74,30 +74,37 @@ DynamoClientItem = Mapping[str, Mapping[Literal["S", "N"], str]]
 QueryCriteria = Mapping[str, Union[str, bool, Dict]]
 
 
-def generate_settings_file(backend: str, dest_path: str = CONFIG_PATH_DEFAULT):
-    """Grabs backend stack outputs and updates the settings file. Creates a new file
-    if one does not exist.
+def generate_settings_file(
+    backend: str,
+    dest_path: Optional[Union[str, Path]] = CONFIG_PATH_DEFAULT,
+    session: Optional[boto3.session.Session] = None,
+) -> Dict[str, str]:
+    """Generates the DynamoWarehouse configs for a given backend stack in a settings
+    file.
+
+    Args:
+        backend: The name of the backend stack
+        dest_path: Output settings file path. If set to None, the warehouse configs
+            will still be returned as a dict but no settings file will be generated.
+        session: An optional boto3 session that will be used to describe the backend
+            stack outputs.
+
+    Returns:
+        A dictionary of key-word arguments used to instantiate the DynamoWarehouse.
     """
-    path = Path(dest_path)
 
-    configs = {}
-    # Simply append if an existing config file exists.
-    if path.is_file():
-        configs = yaml.safe_load(path.read_text())
-
-    backend_outputs = get_stack_output(backend)
-    configs[CONFIG_PREFIX] = {
+    backend_outputs = get_stack_output(backend, session=session)
+    warehouse_configs = {
         "region_name": backend_outputs["RegionName"],
         "registry_table_name": backend_outputs["RegistryTable"],
         "source_table_name": backend_outputs["SourceDataTable"],
         "source_bucket_name": backend_outputs["SourceBucket"],
         "parsed_bucket_name": backend_outputs["ParsedBucket"],
         "bucket_prefix": backend_outputs["StoragePrefix"],
-        "backend_version": backend_outputs["StackVersion"],
     }
 
     # error if backend version < MIN_BACKEND_VERSION
-    backend_version = configs[CONFIG_PREFIX]["backend_version"]
+    backend_version = backend_outputs["StackVersion"]
     if Version(backend_version) < Version(MIN_BACKEND_VERSION):
         raise Exception(
             f"The BackendStack '{backend}' has version '{backend_version}' but "
@@ -105,7 +112,17 @@ def generate_settings_file(backend: str, dest_path: str = CONFIG_PATH_DEFAULT):
             f"'{MIN_BACKEND_VERSION}'."
         )
 
-    path.write_text(yaml.dump(configs))
+    if dest_path:
+        path = Path(dest_path) if isinstance(dest_path, str) else dest_path
+
+        # Simply append the warehouse configs if an existing config file exists.
+        configs = yaml.safe_load(path.read_text()) if path.is_file() else {}
+        configs[CONFIG_PREFIX] = warehouse_configs.copy()
+        configs[CONFIG_PREFIX]["backend_version"] = backend_version
+
+        path.write_text(yaml.dump(configs))
+
+    return warehouse_configs
 
 
 class DynamoWarehouse(API):
