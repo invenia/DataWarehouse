@@ -11,7 +11,7 @@ from tests.dynamo_warehouse.aws_setup import (
     mock_stop,
     setup_resources,
 )
-from tests.utils import get_streams, register_test_collections
+from tests.utils import get_streams, load_file_versions, register_test_collections
 
 
 @pytest.fixture()
@@ -22,21 +22,6 @@ def warehouse():
     register_test_collections(wh)
     yield wh
     mock_stop()
-
-
-def _load_file_versions(warehouse):
-    """Helper method to load in a few file versions."""
-    # pkey: "url"  -  type_map: {url: STR, filename: STR}
-    warehouse.select_collection("test_collection", database="test_database")
-    # This loads in 4 SeekableStreams with the same Primary Key but unique content.
-    files = get_streams("test_database", "test_collection")
-    files.sort(key=lambda f: f.metadata["retrieved_date"])
-    file_key = warehouse.get_primary_key(files[0].metadata)
-    assert all(warehouse.get_primary_key(f.metadata) == file_key for f in files)
-    assert len(set(f.read() for f in files)) == len(files)
-    assert len(files) == 4
-    _ = [f.seek(0) for f in files]  # rewind all files
-    return file_key, files
 
 
 def test_get_primary_key(warehouse):
@@ -74,7 +59,7 @@ def test_get_source_version(warehouse):
 
 
 def test_bucket_prefix(warehouse):
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
 
     pfx = "my_prefix"
     client = get_warehouse_sesh(db="test_database", coll="test_collection", prefix=pfx)
@@ -85,7 +70,7 @@ def test_bucket_prefix(warehouse):
 
 
 def test_string_and_byte_files(warehouse):
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
     content = str(files[0].read())
     metadata = files[0].metadata
 
@@ -210,7 +195,7 @@ def test_store_previous_releases(warehouse):
 
 def test_store_and_retrieve_specify_version(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
     source_versions = []
 
     # Store all versions in the warehouse.
@@ -237,9 +222,72 @@ def test_store_and_retrieve_specify_version(warehouse):
         assert stored.read() == files[i].read()
 
 
+def test_store_and_delete_specify_version(warehouse):
+    # returns multiple versions of a file (loaded from a test file, not in warehouse)
+    file_key, files = load_file_versions(warehouse)
+    source_versions = []
+
+    # Store all versions in the warehouse.
+    for file in files:
+        response = warehouse.store(file)
+        assert response["primary_key"] == file_key
+        assert response["status_code"] == warehouse.STATUS.SUCCESS
+        source_versions.append(response[API.VERSION_FIELD])
+    # unique version ids
+    assert len(set(source_versions)) == len(files)
+
+    version_to_delete = source_versions[0]
+
+    # ensure version exists in warehouse
+    stored = warehouse.retrieve(file_key, version_to_delete)
+    assert warehouse.get_primary_key(stored.metadata) == file_key
+    assert warehouse.get_source_version(stored.metadata) == version_to_delete
+
+    # delete specific version
+    warehouse.delete(file_key, version_to_delete)
+
+    # ensure target version was deleted and others were not
+    for version in source_versions:
+        if version == version_to_delete:
+            with pytest.raises(exceptions.OperationError):
+                stored = warehouse.retrieve(file_key, version)
+        else:
+            stored = warehouse.retrieve(file_key, version)
+            assert warehouse.get_source_version(stored.metadata) == version
+
+
+def test_store_and_delete_all_versions(warehouse):
+    # returns multiple versions of a file (loaded from a test file, not in warehouse)
+    file_key, files = load_file_versions(warehouse)
+    source_versions = []
+
+    # Store all versions in the warehouse.
+    for file in files:
+        response = warehouse.store(file)
+        assert response["primary_key"] == file_key
+        assert response["status_code"] == warehouse.STATUS.SUCCESS
+        source_versions.append(response[API.VERSION_FIELD])
+    # unique version ids
+    assert len(set(source_versions)) == len(files)
+    files[-1].seek(0)
+
+    # don't specify a version; should return an iterator of all versions
+    callables = warehouse.delete(file_key)
+    assert len(callables) == len(source_versions)
+
+    # call all the callables returned by warehouse.delete
+    for delete_callable in callables:
+        delete_callable()
+
+    # ensure all versions were deleted
+    for version in source_versions:
+        with pytest.raises(exceptions.OperationError):
+            warehouse.retrieve(file_key, version)
+
+
 def test_store_and_retrieve_multiple_versions(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
 
     # Store File 0 (retrieved_date: 2020-01-02)
     response = warehouse.store(files[0])
@@ -300,7 +348,7 @@ def test_store_and_retrieve_multiple_versions(warehouse):
 
 def test_store_with_compare_func(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
     file = files[0]
     content = file.read()
     file.seek(0)
@@ -340,7 +388,7 @@ def test_store_with_compare_func(warehouse):
 
 def test_store_missing_fields(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
     content = files[0].read()
 
     required = list(warehouse.required_metadata_fields)  # ("url", "filename")
@@ -363,7 +411,7 @@ def test_store_missing_fields(warehouse):
 
 def test_retrieve_metadata_only(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
     source_versions = []
 
     # Store all versions in the warehouse.
@@ -399,7 +447,7 @@ def test_retrieve_metadata_only(warehouse):
 
 def test_retrieve_non_existent_files(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
 
     # Store then retrieve the file, this works
     response = warehouse.store(files[0])
@@ -423,7 +471,7 @@ def test_retrieve_non_existent_files(warehouse):
 
 def test_retrieve_invalid_keys(warehouse):
     # returns multiple versions of a file (loaded from a test file, not in warehouse)
-    file_key, files = _load_file_versions(warehouse)
+    file_key, files = load_file_versions(warehouse)
 
     # retrieve a non-existent file
     key = ("http://some-random-key",)

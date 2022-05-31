@@ -85,3 +85,18 @@ def load_timestamps_2020():
         int(line.strip())
         for line in Path("tests/files/random_ts_2020.txt").open().readlines()
     ]
+
+
+def load_file_versions(warehouse):
+    """Helper method to load in a few file versions."""
+    # pkey: "url"  -  type_map: {url: STR, filename: STR}
+    warehouse.select_collection("test_collection", database="test_database")
+    # This loads in 4 SeekableStreams with the same Primary Key but unique content.
+    files = get_streams("test_database", "test_collection")
+    files.sort(key=lambda f: f.metadata["retrieved_date"])
+    file_key = warehouse.get_primary_key(files[0].metadata)
+    assert all(warehouse.get_primary_key(f.metadata) == file_key for f in files)
+    assert len(set(f.read() for f in files)) == len(files)
+    assert len(files) == 4
+    _ = [f.seek(0) for f in files]  # rewind all files
+    return file_key, files

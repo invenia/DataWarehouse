@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from distutils.version import LooseVersion as Version
+from functools import partial
 from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import (
     Generator,
     Iterable,
     Iterator,
+    KeysView,
     List,
     Literal,
     Mapping,
@@ -1012,6 +1014,60 @@ class DynamoWarehouse(API):
             else:
                 return self._s3_retrieve(metadata)
 
+    def _delete(
+        self, metadata: Dict[str, ValueTypes], parser_name: str, parsed_files_only: bool
+    ):
+        """
+        Deletes a target file from S3 and, if applicable, DynamoDB.
+
+        Args:
+            metadata: Metadata of stored file, including source version.
+            parser_name: Name of the parser, defaults to all parsers.
+            parsed_files_only: Only deletes parsed files.
+
+        Raises:
+            OperationError: If trying to delete non-existent files.
+        """
+
+        hash_key = cast(str, metadata[self.SRC.HASH.value])
+        range_key = cast(str, metadata[self.SRC.RANGE.value])
+        file_key = str(metadata["file_key"])
+        source_version = str(metadata["source_version"])
+
+        def s3_delete(bucket, parser_name: str = None):
+            s3_key = self._generate_s3_key(hash_key, range_key, parser_name)
+            self._s3_client.delete_object(
+                Bucket=bucket,
+                Key=s3_key,
+            )
+            LOGGER.info(f"Deleted s3 entry: {s3_key}.")
+
+        if parser_name == "all":
+            parsers: Union[List[str], KeysView[str]] = self.available_parsers.keys()
+        else:
+            parsers = [parser_name]
+
+        for parser in parsers:
+            try:
+                s3_delete(self._parsed_bucket, parser_name=parser)
+            except botocore.exceptions.ClientError:
+                LOGGER.warning(
+                    f"Could not deleted parsed file for parser {parser}."
+                    " Does the parsed bucket exist?"
+                )
+
+        if not parsed_files_only:
+            s3_delete(self._source_bucket)
+            # Delete the dynamo entry iff we're deleting the source file
+            self._dynamo_client.delete_item(
+                TableName=self._source_table,
+                Key={
+                    "file_key": {"S": file_key},
+                    "source_version": {"S": source_version},
+                },
+            )
+            LOGGER.info(f"Deleted version {source_version} for key {file_key}.")
+
     def delete(
         self,
         primary_key: Union[ValueTypes, Tuple[ValueTypes, ...]],
@@ -1055,14 +1111,39 @@ class DynamoWarehouse(API):
             parsed_files_only: Only deletes parsed files.
             parser_name: Name of the parser, defaults to all parsers.
 
-        Retruns:
-            None or an iterable or callables to deleted individual file versions found.
+        Returns:
+            None or an iterable of callables to delete individual file versions found.
 
         Raises:
             OperationError: If no database and/or collection is selected or if
                 trying to delete non-existent files.
         """
-        raise NotImplementedError
+        if source_version:
+            metadata_files = [
+                self.retrieve(primary_key, source_version, metadata_only=True)
+            ]
+        else:
+            metadata_files = list(
+                self.retrieve_versions(primary_key, metadata_only=True)
+            )
+
+        callables = []
+        for metadata in metadata_files:
+            delete_callable = partial(
+                self._delete, metadata, parser_name, parsed_files_only
+            )
+            delete_callable.metadata = metadata  # type: ignore
+            callables.append(delete_callable)
+
+        if len(callables) == 1:
+            callables[0]()
+            return None
+        else:
+            LOGGER.warning(
+                f"{len(callables)} versions found for key {primary_key},"
+                " holding off delete."
+            )
+            return callables
 
     def query_metadata_items(
         self,
