@@ -11,7 +11,7 @@ from tests.dynamo_warehouse.aws_setup import (
     mock_stop,
     setup_resources,
 )
-from tests.utils import get_streams, register_test_collections
+from tests.utils import get_streams, load_file_versions, register_test_collections
 
 
 @pytest.fixture()
@@ -176,3 +176,37 @@ def test_store_with_content_start(warehouse):
     response = warehouse.store(parsed, parsed_file=True)
     assert response["status_code"] == warehouse.STATUS.SUCCESS
     assert response["parser_name"] == warehouse.default_parser_name
+
+
+def test_store_and_delete_parsed_only(warehouse):
+    # returns multiple versions of a file (loaded from a test file, not in warehouse)
+    file_key, files = load_file_versions(warehouse)
+    source_versions = []
+
+    # Store all versions in the warehouse.
+    for file in files:
+        response = warehouse.store(file)
+        assert response["primary_key"] == file_key
+        assert response["status_code"] == warehouse.STATUS.SUCCESS
+        source_versions.append(response[API.VERSION_FIELD])
+        # also store as parsed file
+        file.metadata["content_start"] = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        response = warehouse.store(file, parsed_file=True)
+        assert response["primary_key"] == file_key
+        assert response["status_code"] == warehouse.STATUS.SUCCESS
+
+    version_to_delete = source_versions[0]
+
+    # delete specific version
+    warehouse.delete(file_key, version_to_delete, parsed_files_only=True)
+
+    # ensure that parsed file was delete for specified file/version only
+    for version in source_versions:
+        stored = warehouse.retrieve(file_key, version, parsed_file=True)
+        if version == version_to_delete:
+            assert stored is None
+        else:
+            assert stored is not None
+        stored = warehouse.retrieve(file_key, version, parsed_file=False)
+        assert warehouse.get_source_version(stored.metadata) == version
+        assert stored is not None

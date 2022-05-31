@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 0.11.0
+
+### Features
+
+* Implement `delete` for the DynamoWarehouse [!30](https://gitlab.invenia.ca/invenia/Datafeeds/DataWarehouse/-/merge_requests/30)
+
 ## Version 0.10.0
 
 ### Features

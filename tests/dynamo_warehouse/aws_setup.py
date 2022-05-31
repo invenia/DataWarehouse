@@ -57,6 +57,7 @@ def create_registry_table(table_name, region_name):
         TableName=table_name,
         AttributeDefinitions=[{"AttributeName": "feed_id", "AttributeType": "S"}],
         KeySchema=[{"AttributeName": "feed_id", "KeyType": "HASH"}],
+        ProvisionedThroughput={"ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
     )
 
 
@@ -92,4 +93,5 @@ def create_source_table(table_name, region_name):
             {"AttributeName": "release_date", "AttributeType": "N"},
             {"AttributeName": "feed_id", "AttributeType": "S"},
         ],
+        ProvisionedThroughput={"ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
     )
